@@ -4,7 +4,7 @@ import { useApp } from '../../app/AppContext';
 import { AssetThumb } from '../../components/AssetThumb';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
-import { DEFAULT_TRANSFORM } from '../../domain/transform';
+import { newItem } from '../../domain/transform';
 import type { Artwork, Asset } from '../../domain/types';
 
 interface Props {
@@ -31,9 +31,8 @@ export function CreatePresentationDialog({ artwork, photos, backgrounds, existin
       const v = await repo.createVariant({
         presentationId: p.id,
         name: 'A',
-        foregroundAssetId: fg,
         backgroundAssetId: bg,
-        transform: DEFAULT_TRANSFORM,
+        items: fg ? [newItem(fg, 0)] : [],
       });
       navigate(`/studio/${p.id}?variant=${v.id}`);
     } catch (e) {
@@ -56,7 +55,7 @@ export function CreatePresentationDialog({ artwork, photos, backgrounds, existin
       <label htmlFor="pres-title">Nom</label>
       <input id="pres-title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <fieldset className="pick">
-        <legend>Photographie de la sculpture</legend>
+        <legend>Première photographie (tu pourras en ajouter d’autres dans le studio)</legend>
         <div className="pick-grid">
           {photos.map((p) => (
             <label key={p.id} className={`pick-item${fg === p.id ? ' is-picked' : ''}`}>

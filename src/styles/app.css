@@ -265,6 +265,22 @@ label { font-size: 0.875rem; }
 .variant-current-label { color: var(--ink-2); }
 .variant-actions { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
 
+/* ---------- Éléments de la composition ---------- */
+.button-small { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.82rem; }
+.pick-add:hover { outline-color: var(--line); }
+.item-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.item-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.25rem; align-items: center; border-radius: var(--radius); border-left: 3px solid transparent; }
+.item-row.is-selected { background: var(--accent-soft); border-left-color: var(--accent); }
+.item-row.is-hidden .item-name { opacity: 0.5; }
+.item-name { display: grid; grid-template-columns: 34px 1fr; gap: 0.5rem; align-items: center; font: inherit; font-size: 0.85rem; color: var(--ink); background: none; border: 0; padding: 0.25rem; text-align: left; cursor: pointer; min-width: 0; }
+.item-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-thumb { width: 34px; aspect-ratio: 1; }
+.icon-toggle { font: inherit; font-size: 0.72rem; color: var(--ink-2); background: none; border: 1px solid transparent; border-radius: var(--radius); padding: 0.15rem 0.35rem; cursor: pointer; }
+.icon-toggle:hover { border-color: var(--line); color: var(--ink); }
+.item-row.is-hidden .icon-toggle:first-of-type, .icon-toggle.is-on { color: var(--warn); border-color: var(--line); }
+.sliders { border: 0; padding: 0; margin: 0; display: grid; gap: 0.75rem; min-width: 0; }
+.sliders:disabled { opacity: 0.5; }
+
 /* ---------- Comparaison ---------- */
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
 .compare-side { display: grid; gap: 0.75rem; align-content: start; min-width: 0; }

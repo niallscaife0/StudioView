@@ -1,4 +1,4 @@
-import type { Artwork, Asset, AssetKind, ImageMime, Presentation, Transform2D, Variant } from '../domain/types';
+import type { Artwork, Asset, AssetKind, ImageMime, Presentation, Variant, VariantItem } from '../domain/types';
 
 export interface NewAssetInput {
   artworkId: string | null;
@@ -16,14 +16,12 @@ export interface NewVariantInput {
   presentationId: string;
   name: string;
   backgroundAssetId: string | null;
-  foregroundAssetId: string | null;
-  transform: Transform2D;
+  items: VariantItem[];
   note?: string | null;
 }
 
-export type VariantPatch = Partial<
-  Pick<Variant, 'name' | 'backgroundAssetId' | 'foregroundAssetId' | 'transform' | 'note'>
->;
+/** `items`, s'il est fourni, REMPLACE toute la liste (ordre compris), de façon atomique. */
+export type VariantPatch = Partial<Pick<Variant, 'name' | 'backgroundAssetId' | 'items' | 'note'>>;
 
 export type AssetPatch = Partial<Pick<Asset, 'title' | 'artworkId' | 'kind'>>;
 
@@ -82,7 +80,7 @@ export class SyncError extends Error {
 }
 
 export function variantsUsingAsset(variants: Variant[], assetId: string): Variant[] {
-  return variants.filter((v) => v.backgroundAssetId === assetId || v.foregroundAssetId === assetId);
+  return variants.filter((v) => v.backgroundAssetId === assetId || v.items.some((i) => i.assetId === assetId));
 }
 
 export function nowIso(): string {

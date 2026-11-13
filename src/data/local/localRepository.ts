@@ -1,5 +1,5 @@
 import type { Artwork, Asset, Presentation, Variant } from '../../domain/types';
-import { parseTransform } from '../../domain/transform';
+import { parseItems, upgradeLegacyVariant } from '../../domain/transform';
 import {
   AssetInUseError,
   NotFoundError,
@@ -45,7 +45,10 @@ export class LocalRepository implements Repository {
   private dbPromise: Promise<IDBDatabase>;
 
   constructor(dbName = 'laboratoire-sculpture') {
-    this.dbPromise = openDatabase(dbName);
+    this.dbPromise = openDatabase(dbName).then(async (db) => {
+      await migrateLegacyVariants(db);
+      return db;
+    });
   }
 
   private db() {
@@ -204,9 +207,10 @@ export class LocalRepository implements Repository {
     return get<Variant>(await this.db(), 'variants', id);
   }
 
-  private async checkVariantRefs(v: Pick<Variant, 'presentationId' | 'backgroundAssetId' | 'foregroundAssetId'>) {
+  private async checkVariantRefs(v: Pick<Variant, 'presentationId' | 'backgroundAssetId' | 'items'>) {
     if (!(await this.getPresentation(v.presentationId))) throw new NotFoundError('Présentation');
-    for (const id of [v.backgroundAssetId, v.foregroundAssetId]) {
+    const ids = new Set([v.backgroundAssetId, ...v.items.map((i) => i.assetId)]);
+    for (const id of ids) {
       if (id && !(await this.getAsset(id))) throw new NotFoundError('Image');
     }
   }
@@ -219,8 +223,7 @@ export class LocalRepository implements Repository {
       presentationId: input.presentationId,
       name: cleanTitle(input.name, 'Variante'),
       backgroundAssetId: input.backgroundAssetId,
-      foregroundAssetId: input.foregroundAssetId,
-      transform: parseTransform(input.transform),
+      items: parseItems(input.items),
       note: input.note ?? null,
       createdAt: now,
       updatedAt: now,
@@ -236,7 +239,7 @@ export class LocalRepository implements Repository {
       ...v,
       ...patch,
       name: patch.name !== undefined ? cleanTitle(patch.name, v.name) : v.name,
-      transform: patch.transform ? parseTransform(patch.transform) : v.transform,
+      items: patch.items ? parseItems(patch.items) : v.items,
       updatedAt: nowIso(),
     };
     await this.checkVariantRefs(next);
@@ -254,4 +257,19 @@ export class LocalRepository implements Repository {
     if (p) ops.push({ type: 'put', store: 'presentations', key: p.id, value: { ...p, updatedAt: nowIso() } });
     await write(db, ops);
   }
+}
+
+/** Reprise V1 → V2 au premier lancement : chaque variante à photo unique devient une variante à un élément. */
+async function migrateLegacyVariants(db: IDBDatabase): Promise<void> {
+  const raws = await getAll<Record<string, unknown>>(db, 'variants');
+  const ops: WriteOp[] = [];
+  for (const raw of raws) {
+    const { items, changed } = upgradeLegacyVariant(raw);
+    if (!changed) continue;
+    const next = { ...raw, items };
+    delete (next as Record<string, unknown>).foregroundAssetId;
+    delete (next as Record<string, unknown>).transform;
+    ops.push({ type: 'put', store: 'variants', key: String(raw.id), value: next });
+  }
+  await write(db, ops);
 }

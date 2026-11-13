@@ -1,4 +1,4 @@
-# Checklist de validation — V1 (P0)
+# Checklist de validation — V1 et V2 phase 1
 
 Trois statuts, sans exagération :
 - **Vérifié** : un test automatique ou le parcours navigateur l'a constaté pendant le développement.
@@ -10,10 +10,10 @@ Trois statuts, sans exagération :
 | Contrôle | Résultat |
 |---|---|
 | `npm run lint`, `npm run typecheck`, `npm run build` | Passent |
-| `npm test` | 37 tests passent (validation, composition, dépôt local, mapping Supabase, interface) |
-| `scripts/test-sql-local.sh` sur PostgreSQL 16 avec stubs Supabase | Tous les tests SQL passent |
+| `npm test` | 47 tests passent (validation, composition à éléments, sélection au pixel, dépôt local, reprise V1, mapping Supabase, interface) |
+| `scripts/test-sql-local.sh` sur PostgreSQL 16 avec stubs Supabase | Tous les tests SQL passent, y compris la reprise d'un jeu de données V1 créé avant la migration V2 |
 | Tests de mutation SQL (protection retirée volontairement) | Quatre mutations, quatre échecs détectés : RLS retirée, clé étrangère non composite, `set null` sur toutes les colonnes, politique Storage ouverte |
-| `e2e/run.cjs` dans Chromium (mode local) | Parcours complet réussi, aucune erreur console |
+| `e2e/run.cjs` dans Chromium (mode local) | Parcours complet réussi (V1 + éléments multiples + reprise V1), aucune erreur console |
 | `npm run test:rls` contre un vrai Supabase | **À faire** (pas d'accès aux comptes) |
 
 Les stubs SQL imitent `auth.uid()` et `storage.objects` ; ils ne sont pas Supabase. Le test réel `test:rls` reste indispensable.
@@ -52,6 +52,33 @@ Les stubs SQL imitent `auth.uid()` et `storage.objects` ; ils ne sont pas Supaba
 | F-11 Synchronisation entre appareils | Implémenté (Supabase) ; **à vérifier** | `data/supabase/` |
 | F-12 États (chargement, vide, erreur, non synchronisé) | Implémenté ; états vides et erreurs d'import vérifiés | |
 
+## V2 — Phase 0 (préalable, demande tes comptes)
+
+| Contrôle | Statut |
+|---|---|
+| Supabase recette et production créés, migrations 0001 et 0002 appliquées | **À faire** |
+| `npm run test:rls` réussi sur la recette | **À faire**. Le script couvre les tables V1 ; son extension à `variant_items` et `save_variant` reste **à implémenter** |
+| Cloudflare Access sur toutes les adresses du Worker | **À faire** |
+| Synchronisation constatée sur un second appareil | **À faire** |
+
+La phase 1 a été construite sans attendre la phase 0, parce qu'elle se vérifie entièrement en local. Elle ne doit pas être utilisée avec des données réelles en ligne tant que la phase 0 n'est pas faite.
+
+## V2 — Phase 1 : éléments multiples
+
+| ID | Exigence | Statut |
+|---|---|---|
+| F-25 | Une variante contient une liste d'éléments, chacun avec sa transformation | Vérifié (tests, E2E : trois éléments, déplacement indépendant) |
+| F-26 | Sélection (liste et clic au pixel), ordre, dupliquer, retirer, masquer, verrouiller, renommer | Vérifié pour sélection, ordre, masquage, rechargement. Dupliquer, retirer, verrouiller, renommer : implémentés, non vérifiés en E2E. Réordonnancement par boutons, pas par glisser-déposer |
+| F-27 | Reprise des variantes V1 | Vérifié en SQL (jeu V1 avant migration), en test unitaire et en E2E (variante V1 injectée dans IndexedDB : un élément, position identique) |
+
+| # | Critère V2 | Statut |
+|---|---|---|
+| 1 | Trois éléments indépendants ; ordre retrouvé après rechargement | Vérifié en mode local |
+| 2 | Variante V1 affichée identiquement après migration | Transformation reprise à l'identique (vérifié). La comparaison pixel à pixel des exports avant / après n'est **pas** automatisée |
+| 12 | B ne peut ni lire ni référencer les éléments de A | Vérifié en SQL local (lecture, insertion, suppression, `save_variant` sur la variante de A, image de A) ; **à confirmer** sur un vrai Supabase |
+
+Vérifié aussi en SQL : `save_variant` est atomique (un élément invalide annule tout l'enregistrement) et inaccessible à un visiteur anonyme.
+
 ## Recette utilisateur à faire toi-même après déploiement
 
 1. Ouvrir l'atelier : Access, puis lien magique.
@@ -68,5 +95,6 @@ Les stubs SQL imitent `auth.uid()` et `storage.objects` ; ils ne sont pas Supaba
 - Pas de détourage automatique : préparer les PNG/WebP transparents dans un outil externe.
 - Pas de brouillon hors ligne persistant (D-04) : une coupure garde l'édition dans l'onglet seulement.
 - Pas d'export/import d'archive de l'atelier (F-15, P1).
-- Pas de partage par lien (P1) ni de 3D (V2).
+- Pas de partage par lien ni d'archive (repris en V2 phase 6).
+- V2 : seule la phase 1 (éléments multiples) est faite. Pas encore de détourage, de salle 2,5D, de volumes ni de points de vue.
 - Une même session Studio n'avertit pas si une autre machine a modifié la même variante entre-temps : le dernier enregistrement l'emporte.

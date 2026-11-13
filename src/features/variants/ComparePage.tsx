@@ -75,8 +75,8 @@ export function ComparePage() {
         return (
           <ExportDialog
             background={assets.find((a) => a.id === exporting.backgroundAssetId) ?? null}
-            foreground={assets.find((a) => a.id === exporting.foregroundAssetId) ?? null}
-            transform={exporting.transform}
+            items={exporting.items}
+            assets={assets}
             fileBase={`${artOf(p)?.title ?? ''}-${p?.title ?? ''}-${exporting.name}`}
             onClose={() => setExporting(null)}
           />
@@ -92,7 +92,7 @@ function Facts({ variant, assets }: { variant: Variant; assets: Asset[] }) {
     <dl className="facts">
       <div><dt>Variante</dt><dd>{variant.name}</dd></div>
       <div><dt>Décor</dt><dd>{bg?.title ?? 'sans décor'}</dd></div>
-      <div><dt>Hauteur dans le cadre</dt><dd>{Math.round(variant.transform.scale * 100)} %</dd></div>
+      <div><dt>Éléments</dt><dd>{variant.items.filter((i) => !i.hidden).length}</dd></div>
     </dl>
   );
 }

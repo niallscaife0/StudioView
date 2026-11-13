@@ -8,8 +8,8 @@ import { InlineRename } from '../../components/InlineRename';
 import { Modal } from '../../components/Modal';
 import { SaveIndicator, type SaveState } from '../../components/SaveIndicator';
 import { useToast } from '../../components/Toast';
-import { DEFAULT_TRANSFORM, SCALE_MAX, SCALE_MIN, clampTransform, sameDraft } from '../../domain/transform';
-import type { Asset, Variant, VariantDraft } from '../../domain/types';
+import { DEFAULT_TRANSFORM, MAX_ITEMS, SCALE_MAX, SCALE_MIN, clampTransform, newItem, sameDraft } from '../../domain/transform';
+import type { Artwork, Asset, Transform2D, Variant, VariantDraft, VariantItem } from '../../domain/types';
 import { ExportDialog } from '../exports/ExportDialog';
 import { StudioCanvas } from './StudioCanvas';
 import { useDraftHistory } from './useHistory';
@@ -22,11 +22,7 @@ export function nextVariantName(existing: string[]): string {
   return `Variante ${existing.length + 1}`;
 }
 
-const toDraft = (v: Variant): VariantDraft => ({
-  backgroundAssetId: v.backgroundAssetId,
-  foregroundAssetId: v.foregroundAssetId,
-  transform: v.transform,
-});
+const toDraft = (v: Variant): VariantDraft => ({ backgroundAssetId: v.backgroundAssetId, items: v.items });
 
 export function StudioPage() {
   const { presentationId = '' } = useParams();
@@ -35,12 +31,14 @@ export function StudioPage() {
   const { data, loading, error, reload } = useLoad(async () => {
     const presentation = await repo.getPresentation(presentationId);
     if (!presentation) return null;
-    const [artwork, assets, variants] = await Promise.all([
-      repo.getArtwork(presentation.artworkId),
-      repo.listAssets(),
-      repo.listVariants(),
-    ]);
-    return { presentation, artwork, assets, variants: variants.filter((v) => v.presentationId === presentationId) };
+    const [artworks, assets, variants] = await Promise.all([repo.listArtworks(), repo.listAssets(), repo.listVariants()]);
+    return {
+      presentation,
+      artworks,
+      artwork: artworks.find((a) => a.id === presentation.artworkId) ?? null,
+      assets,
+      variants: variants.filter((v) => v.presentationId === presentationId),
+    };
   }, [repo, presentationId]);
 
   if (loading && !data) return <p className="page-state" role="status">Ouverture du studio…</p>;
@@ -75,6 +73,7 @@ export function StudioPage() {
       variant={active}
       variants={data.variants}
       assets={data.assets}
+      artworks={data.artworks}
       presentationTitle={data.presentation.title}
       artworkTitle={data.artwork?.title ?? ''}
       artworkId={data.presentation.artworkId}
@@ -97,7 +96,7 @@ function EmptyPresentation({ presentationId, assets, artworkId, onCreated }: { p
         className="button button-primary"
         onClick={async () => {
           try {
-            const v = await repo.createVariant({ presentationId, name: 'A', foregroundAssetId: photo?.id ?? null, backgroundAssetId: null, transform: DEFAULT_TRANSFORM });
+            const v = await repo.createVariant({ presentationId, name: 'A', backgroundAssetId: null, items: photo ? [newItem(photo.id, 0)] : [] });
             onCreated(v.id);
           } catch (e) {
             toast('error', (e as Error).message);
@@ -114,6 +113,7 @@ interface EditorProps {
   variant: Variant;
   variants: Variant[];
   assets: Asset[];
+  artworks: Artwork[];
   presentationTitle: string;
   artworkTitle: string;
   artworkId: string;
@@ -124,7 +124,7 @@ interface EditorProps {
 type PendingSwitch = { kind: 'variant'; id: string } | { kind: 'route' };
 
 function StudioEditor(props: EditorProps) {
-  const { variant, variants, assets, artworkId, presentationId, reload } = props;
+  const { variant, variants, assets, artworks, artworkId, presentationId, reload } = props;
   const { repo } = useApp();
   const toast = useToast();
   const [, setParams] = useSearchParams();
@@ -139,12 +139,17 @@ function StudioEditor(props: EditorProps) {
   const [pending, setPending] = useState<PendingSwitch | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [extraAssets, setExtraAssets] = useState<Asset[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(variant.items[variant.items.length - 1]?.id ?? null);
+  const [sourceArtwork, setSourceArtwork] = useState(artworkId);
 
   const allAssets = useMemo(() => [...assets, ...extraAssets.filter((e) => !assets.some((a) => a.id === e.id))], [assets, extraAssets]);
-  const photos = allAssets.filter((a) => a.artworkId === artworkId && (a.kind === 'cutout' || a.kind === 'photo'));
+  const assetById = useMemo(() => new Map(allAssets.map((a) => [a.id, a])), [allAssets]);
+  const photos = allAssets.filter((a) => a.artworkId === sourceArtwork && (a.kind === 'cutout' || a.kind === 'photo'));
   const backgrounds = allAssets.filter((a) => a.kind === 'background');
-  const bg = allAssets.find((a) => a.id === draft.backgroundAssetId) ?? null;
-  const fg = allAssets.find((a) => a.id === draft.foregroundAssetId) ?? null;
+  const bg = draft.backgroundAssetId ? assetById.get(draft.backgroundAssetId) ?? null : null;
+  const selected = draft.items.find((i) => i.id === selectedId) ?? null;
+  const selectedAsset = selected ? assetById.get(selected.assetId) ?? null : null;
+  const itemLabel = (it: VariantItem) => it.name ?? assetById.get(it.assetId)?.title ?? 'Image supprimée';
 
   const dirty = !sameDraft(draft, saved) || note !== savedNote;
   const effectiveState: SaveState = saveState === 'saving' || saveState === 'error' ? saveState : dirty ? 'dirty' : 'saved';
@@ -152,7 +157,7 @@ function StudioEditor(props: EditorProps) {
   const save = useCallback(async (): Promise<boolean> => {
     setSaveState('saving');
     try {
-      const v = await repo.updateVariant(variant.id, { ...draft, note: note.trim() ? note : null });
+      const v = await repo.updateVariant(variant.id, { backgroundAssetId: draft.backgroundAssetId, items: draft.items, note: note.trim() ? note : null });
       setSaved(toDraft(v));
       setSavedNote(v.note ?? '');
       setSaveState('saved');
@@ -165,7 +170,6 @@ function StudioEditor(props: EditorProps) {
     }
   }, [repo, variant.id, draft, note, toast]);
 
-  // Avertissement à la fermeture de l'onglet.
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => {
@@ -176,14 +180,12 @@ function StudioEditor(props: EditorProps) {
     return () => window.removeEventListener('beforeunload', h);
   }, [dirty]);
 
-  // Navigation interne avec modifications non enregistrées.
   const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname);
   const blockerState = blocker.state;
   useEffect(() => {
     if (blockerState === 'blocked') setPending({ kind: 'route' });
   }, [blockerState]);
 
-  // Raccourcis : Ctrl/Cmd+S enregistrer, Ctrl/Cmd+Z annuler.
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
@@ -201,6 +203,57 @@ function StudioEditor(props: EditorProps) {
     return () => window.removeEventListener('keydown', h);
   }, [undo]);
 
+  // ---- Éléments -----------------------------------------------------------
+  const setItems = (fn: (items: VariantItem[]) => VariantItem[], coalesce = false) =>
+    update((d) => ({ ...d, items: fn(d.items) }), coalesce);
+
+  function addItem(asset: Asset) {
+    if (draft.items.length >= MAX_ITEMS) {
+      toast('error', `Une composition contient au maximum ${MAX_ITEMS} éléments.`);
+      return;
+    }
+    const it = newItem(asset.id, draft.items.length);
+    setItems((items) => [...items, it]);
+    setSelectedId(it.id);
+  }
+  const patchItem = (id: string, patch: Partial<VariantItem>, coalesce = false) =>
+    setItems((items) => items.map((i) => (i.id === id ? { ...i, ...patch } : i)), coalesce);
+  const setTransform = (id: string, t: Transform2D) => patchItem(id, { transform: t }, true);
+  function removeItem(id: string) {
+    setItems((items) => items.filter((i) => i.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  }
+  function duplicateItem(id: string) {
+    const src = draft.items.find((i) => i.id === id);
+    if (!src || draft.items.length >= MAX_ITEMS) return;
+    const copy: VariantItem = {
+      ...src,
+      id: crypto.randomUUID(),
+      locked: false,
+      transform: clampTransform({ ...src.transform, x: src.transform.x + 0.05, y: src.transform.y + 0.02 }),
+    };
+    setItems((items) => {
+      const idx = items.findIndex((i) => i.id === id);
+      return [...items.slice(0, idx + 1), copy, ...items.slice(idx + 1)];
+    });
+    setSelectedId(copy.id);
+  }
+  /** dir = +1 : vers le premier plan ; -1 : vers le fond. */
+  function moveItem(id: string, dir: 1 | -1) {
+    setItems((items) => {
+      const idx = items.findIndex((i) => i.id === id);
+      const to = idx + dir;
+      if (idx < 0 || to < 0 || to >= items.length) return items;
+      const next = [...items];
+      [next[idx], next[to]] = [next[to], next[idx]];
+      return next;
+    });
+  }
+  const setT = (patch: Partial<Transform2D>) => {
+    if (selected) setTransform(selected.id, clampTransform({ ...selected.transform, ...patch }));
+  };
+
+  // ---- Variantes ----------------------------------------------------------
   function goToVariant(id: string) {
     if (id === variant.id) return;
     if (dirty) setPending({ kind: 'variant', id });
@@ -232,7 +285,9 @@ function StudioEditor(props: EditorProps) {
       const v = await repo.createVariant({
         presentationId,
         name: nextVariantName(variants.map((x) => x.name)),
-        ...draft,
+        backgroundAssetId: draft.backgroundAssetId,
+        // Nouveaux identifiants : les éléments de la copie sont indépendants de l'original.
+        items: draft.items.map((i) => ({ ...i, id: crypto.randomUUID() })),
       });
       toast(
         'success',
@@ -240,7 +295,7 @@ function StudioEditor(props: EditorProps) {
           ? `Variante « ${v.name} » créée à partir de l’état affiché. « ${variant.name} » garde sa dernière version enregistrée.`
           : `Variante « ${v.name} » créée.`,
       );
-      setSaved(draft); // évite la demande de confirmation pour l'état copié
+      setSaved(draft);
       setNote(savedNote);
       setParams({ variant: v.id });
       reload();
@@ -264,10 +319,9 @@ function StudioEditor(props: EditorProps) {
     }
   }
 
-  const setT = (patch: Partial<VariantDraft['transform']>) =>
-    update((d) => ({ ...d, transform: clampTransform({ ...d.transform, ...patch }) }));
-
   const otherVariant = variants.find((v) => v.id !== variant.id);
+  const selIndex = selected ? draft.items.findIndex((i) => i.id === selected.id) : -1;
+  const hasVisible = draft.items.some((i) => !i.hidden);
 
   return (
     <div className="studio">
@@ -284,20 +338,25 @@ function StudioEditor(props: EditorProps) {
       </div>
 
       <div className="studio-body">
-        <aside className="studio-panel studio-left" aria-label="Ressources de la présentation">
-          <h2>Sculpture</h2>
-          {photos.length === 0 && <p className="muted">Aucune photo pour cette œuvre.</p>}
-          <div className="pick-grid pick-grid-tight" role="radiogroup" aria-label="Photographie de la sculpture">
+        <aside className="studio-panel studio-left" aria-label="Images à ajouter">
+          <h2>Ajouter une image</h2>
+          {artworks.length > 1 && (
+            <label className="small-field">
+              <span className="sr-only">Œuvre dont afficher les photographies</span>
+              <select value={sourceArtwork} onChange={(e) => setSourceArtwork(e.target.value)}>
+                {artworks.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+              </select>
+            </label>
+          )}
+          {photos.length === 0 && <p className="muted small">Aucune photo pour cette œuvre.</p>}
+          <div className="pick-grid pick-grid-tight">
             {photos.map((p) => (
-              <button key={p.id} type="button" role="radio" aria-checked={draft.foregroundAssetId === p.id} className={`pick-item${draft.foregroundAssetId === p.id ? ' is-picked' : ''}`} onClick={() => update((d) => ({ ...d, foregroundAssetId: p.id }), false)}>
+              <button key={p.id} type="button" className="pick-item pick-add" onClick={() => addItem(p)} aria-label={`Ajouter ${p.title} à la composition`}>
                 <AssetThumb asset={p} />
                 <span>{p.title}</span>
               </button>
             ))}
           </div>
-          {fg && fg.transparency === false && (
-            <p className="warn-text" role="note">Fond non transparent : la photo s’affiche comme un rectangle posé sur le décor. L’insertion ne peut pas être réaliste.</p>
-          )}
 
           <h2>Décor</h2>
           <div className="pick-grid pick-grid-tight" role="radiogroup" aria-label="Décor">
@@ -327,24 +386,66 @@ function StudioEditor(props: EditorProps) {
         <section className="studio-center" aria-label="Aperçu">
           <StudioCanvas
             background={bg}
-            foreground={fg}
-            transform={draft.transform}
-            onChange={(t) => update((d) => ({ ...d, transform: t }))}
+            items={draft.items}
+            assets={allAssets}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onChangeItem={setTransform}
             onCommit={commit}
+            onRemoveSelected={() => selected && removeItem(selected.id)}
             label={`Composition de la variante ${variant.name}`}
           />
         </section>
 
-        <aside className="studio-panel studio-right" aria-label="Paramètres">
-          <h2>Placement</h2>
-          <Slider label="Horizontal" value={draft.transform.x} min={-0.25} max={1.25} step={0.001} format={(v) => `${Math.round(v * 100)} %`} onChange={(x) => setT({ x })} onCommit={commit} />
-          <Slider label="Vertical" value={draft.transform.y} min={-0.25} max={1.25} step={0.001} format={(v) => `${Math.round(v * 100)} %`} onChange={(y) => setT({ y })} onCommit={commit} />
-          <Slider label="Hauteur dans le cadre" value={draft.transform.scale} min={SCALE_MIN} max={SCALE_MAX} step={0.005} format={(v) => `${Math.round(v * 100)} %`} onChange={(scale) => setT({ scale })} onCommit={commit} />
-          <Slider label="Rotation" value={draft.transform.rotationDeg} min={-180} max={180} step={0.5} format={(v) => `${v.toFixed(1).replace('.', ',')}°`} onChange={(rotationDeg) => setT({ rotationDeg })} onCommit={commit} />
-          <p className="muted small">Valeurs relatives au cadre, approximatives : elles ne disent rien de la taille réelle de la sculpture.</p>
+        <aside className="studio-panel studio-right" aria-label="Éléments et réglages">
+          <h2>Éléments ({draft.items.length})</h2>
+          {draft.items.length === 0 && <p className="muted small">Clique une photographie à gauche pour la poser sur le décor.</p>}
+          <ul className="item-list" aria-label="Éléments, du premier plan vers le fond">
+            {[...draft.items].reverse().map((it) => (
+              <li key={it.id} className={`item-row${it.id === selectedId ? ' is-selected' : ''}${it.hidden ? ' is-hidden' : ''}`}>
+                <button type="button" className="item-name" aria-pressed={it.id === selectedId} onClick={() => setSelectedId(it.id)}>
+                  <AssetThumb asset={assetById.get(it.assetId)} className="item-thumb" />
+                  <span>{itemLabel(it)}</span>
+                </button>
+                <button type="button" className="icon-toggle" aria-pressed={!it.hidden} aria-label={`${it.hidden ? 'Afficher' : 'Masquer'} ${itemLabel(it)}`} title={it.hidden ? 'Afficher' : 'Masquer'} onClick={() => patchItem(it.id, { hidden: !it.hidden })}>
+                  {it.hidden ? 'masqué' : 'visible'}
+                </button>
+                <button type="button" className={`icon-toggle${it.locked ? ' is-on' : ''}`} aria-pressed={it.locked} aria-label={`${it.locked ? 'Déverrouiller' : 'Verrouiller'} ${itemLabel(it)}`} title={it.locked ? 'Déverrouiller' : 'Verrouiller'} onClick={() => patchItem(it.id, { locked: !it.locked })}>
+                  {it.locked ? 'verrouillé' : 'libre'}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {selected && (
+            <>
+              <div className="button-row">
+                <button type="button" className="button button-small" onClick={() => moveItem(selected.id, 1)} disabled={selIndex === draft.items.length - 1}>Vers l’avant</button>
+                <button type="button" className="button button-small" onClick={() => moveItem(selected.id, -1)} disabled={selIndex === 0}>Vers le fond</button>
+                <button type="button" className="button button-small" onClick={() => duplicateItem(selected.id)} disabled={draft.items.length >= MAX_ITEMS}>Dupliquer</button>
+                <button type="button" className="button button-small danger-text" onClick={() => removeItem(selected.id)}>Retirer</button>
+              </div>
+              <h2>Élément choisi</h2>
+              <InlineRename value={itemLabel(selected)} label="Renommer l’élément" onSave={async (t) => patchItem(selected.id, { name: t.trim() || null })} />
+              {selectedAsset && selectedAsset.transparency === false && (
+                <p className="warn-text" role="note">Fond non transparent : cette photo s’affiche comme un rectangle posé sur le décor.</p>
+              )}
+              <fieldset disabled={selected.locked} className="sliders">
+                <legend className="sr-only">Placement de l’élément choisi</legend>
+                <Slider label="Horizontal" value={selected.transform.x} min={-0.25} max={1.25} step={0.001} format={(v) => `${Math.round(v * 100)} %`} onChange={(x) => setT({ x })} onCommit={commit} />
+                <Slider label="Vertical" value={selected.transform.y} min={-0.25} max={1.25} step={0.001} format={(v) => `${Math.round(v * 100)} %`} onChange={(y) => setT({ y })} onCommit={commit} />
+                <Slider label="Hauteur dans le cadre" value={selected.transform.scale} min={SCALE_MIN} max={SCALE_MAX} step={0.005} format={(v) => `${Math.round(v * 100)} %`} onChange={(scale) => setT({ scale })} onCommit={commit} />
+                <Slider label="Rotation" value={selected.transform.rotationDeg} min={-180} max={180} step={0.5} format={(v) => `${v.toFixed(1).replace('.', ',')}°`} onChange={(rotationDeg) => setT({ rotationDeg })} onCommit={commit} />
+              </fieldset>
+              {selected.locked && <p className="muted small">Élément verrouillé : déverrouille-le pour le déplacer.</p>}
+              <p className="muted small">Valeurs relatives au cadre, approximatives : elles ne disent rien de la taille réelle.</p>
+            </>
+          )}
           <div className="button-row">
-            <button type="button" className="button" onClick={undo} disabled={!canUndo}>Annuler</button>
-            <button type="button" className="button" onClick={() => update((d) => ({ ...d, transform: DEFAULT_TRANSFORM }), false)}>Réinitialiser la vue</button>
+            <button type="button" className="button button-small" onClick={undo} disabled={!canUndo}>Annuler</button>
+            {selected && !selected.locked && (
+              <button type="button" className="button button-small" onClick={() => setTransform(selected.id, DEFAULT_TRANSFORM)}>Réinitialiser la position</button>
+            )}
           </div>
           <details className="note">
             <summary>Note personnelle (facultative)</summary>
@@ -374,12 +475,12 @@ function StudioEditor(props: EditorProps) {
           ) : (
             <span className="muted small">Duplique pour pouvoir comparer.</span>
           )}
-          <button type="button" className="button" onClick={() => setExporting(true)} disabled={!fg}>Exporter</button>
+          <button type="button" className="button" onClick={() => setExporting(true)} disabled={!hasVisible}>Exporter</button>
         </div>
       </div>
 
       {exporting && (
-        <ExportDialog background={bg} foreground={fg} transform={draft.transform} fileBase={`${props.artworkTitle}-${props.presentationTitle}-${variant.name}`} onClose={() => setExporting(false)} />
+        <ExportDialog background={bg} items={draft.items} assets={allAssets} fileBase={`${props.artworkTitle}-${props.presentationTitle}-${variant.name}`} onClose={() => setExporting(false)} />
       )}
       {pending && (
         <Modal

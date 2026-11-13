@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { foregroundRect, frameAspect, handlePosition, hitForeground, hitHandle, outputSize } from '../src/features/studio2d/compose';
-import { DEFAULT_TRANSFORM, clampTransform, parseTransform, sameDraft } from '../src/domain/transform';
-import type { Transform2D } from '../src/domain/types';
+import { foregroundRect, frameAspect, handlePosition, hitForeground, hitHandle, outputSize, pickItem, type AlphaMask } from '../src/features/studio2d/compose';
+import { DEFAULT_TRANSFORM, clampTransform, newItem, parseItems, parseTransform, sameDraft, upgradeLegacyVariant } from '../src/domain/transform';
+import type { Transform2D, VariantItem } from '../src/domain/types';
 
 const t = (p: Partial<Transform2D>): Transform2D => ({ ...DEFAULT_TRANSFORM, ...p });
 
@@ -64,10 +64,69 @@ describe('transformation', () => {
   it('refuse une version future plutôt que de la mal interpréter', () => {
     expect(() => parseTransform({ schemaVersion: 2, x: 0 })).toThrow(/Version/);
   });
-  it('compare deux états', () => {
-    const a = { backgroundAssetId: 'b', foregroundAssetId: 'f', transform: DEFAULT_TRANSFORM };
-    expect(sameDraft(a, { ...a })).toBe(true);
-    expect(sameDraft(a, { ...a, transform: t({ x: 0.51 }) })).toBe(false);
+  it('compare deux états : décor, ordre et contenu des éléments', () => {
+    const i1: VariantItem = { id: 'i1', assetId: 'f', name: null, transform: DEFAULT_TRANSFORM, hidden: false, locked: false };
+    const i2: VariantItem = { ...i1, id: 'i2', assetId: 'g' };
+    const a = { backgroundAssetId: 'b', items: [i1, i2] };
+    expect(sameDraft(a, { backgroundAssetId: 'b', items: [{ ...i1 }, { ...i2 }] })).toBe(true);
+    expect(sameDraft(a, { ...a, items: [i2, i1] })).toBe(false);
+    expect(sameDraft(a, { ...a, items: [i1] })).toBe(false);
+    expect(sameDraft(a, { ...a, items: [i1, { ...i2, hidden: true }] })).toBe(false);
+    expect(sameDraft(a, { ...a, items: [i1, { ...i2, transform: t({ x: 0.51 }) }] })).toBe(false);
     expect(sameDraft(a, { ...a, backgroundAssetId: null })).toBe(false);
+  });
+});
+
+describe('sélection parmi plusieurs éléments', () => {
+  const frame = { w: 1000, h: 1000 };
+  const size = { w: 100, h: 100 };
+  const base = { size, hidden: false, locked: false };
+  // Deux carrés de 400 px qui se recouvrent au centre.
+  const bottom = { ...base, transform: t({ x: 0.4, y: 0.5, scale: 0.4 }) };
+  const top = { ...base, transform: t({ x: 0.6, y: 0.5, scale: 0.4 }) };
+
+  it('choisit l’élément le plus haut dans la pile', () => {
+    expect(pickItem(500, 500, frame, [bottom, top])).toBe(1);
+    expect(pickItem(250, 500, frame, [bottom, top])).toBe(0);
+    expect(pickItem(950, 950, frame, [bottom, top])).toBe(-1);
+  });
+  it('traverse les éléments masqués ou verrouillés', () => {
+    expect(pickItem(500, 500, frame, [bottom, { ...top, hidden: true }])).toBe(0);
+    expect(pickItem(500, 500, frame, [bottom, { ...top, locked: true }])).toBe(0);
+  });
+  it('ignore les pixels transparents de l’élément du dessus', () => {
+    // Masque 2×2 : moitié gauche transparente, moitié droite opaque.
+    const alpha: AlphaMask = { w: 2, h: 2, data: new Uint8Array([0, 255, 0, 255]) };
+    const cut = { ...top, alpha };
+    expect(pickItem(500, 500, frame, [bottom, cut])).toBe(0); // zone transparente du dessus → celui du dessous
+    expect(pickItem(700, 500, frame, [bottom, cut])).toBe(1); // zone opaque
+    expect(pickItem(450, 500, frame, [cut])).toBe(-1); // transparent et rien dessous
+  });
+});
+
+describe('éléments', () => {
+  it('décale légèrement chaque nouvel élément', () => {
+    const a = newItem('x', 0);
+    const b = newItem('x', 1);
+    expect(a.id).not.toBe(b.id);
+    expect(b.transform.x).toBeGreaterThan(a.transform.x);
+  });
+  it('lit une liste stockée de façon défensive', () => {
+    const items = parseItems([{ assetId: 'a', transform: { x: 0.2 } }, { pasUnElement: true }, null, { id: 'k', assetId: 'b', hidden: true, name: '  ' }]);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ assetId: 'a', hidden: false, locked: false, transform: { x: 0.2, scale: DEFAULT_TRANSFORM.scale } });
+    expect(items[1]).toMatchObject({ id: 'k', hidden: true, name: null });
+    expect(parseItems('non')).toEqual([]);
+  });
+  it('reprend une variante V1 à photo unique en un élément identique (F-27)', () => {
+    const legacy = { id: 'v', foregroundAssetId: 'photo', transform: { schemaVersion: 1, x: 0.31, y: 0.62, scale: 0.44, rotationDeg: 12.5 } };
+    const { items, changed } = upgradeLegacyVariant(legacy);
+    expect(changed).toBe(true);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ assetId: 'photo', transform: { x: 0.31, y: 0.62, scale: 0.44, rotationDeg: 12.5 }, hidden: false });
+  });
+  it('ne touche pas une variante déjà au format V2, et gère une variante V1 sans photo', () => {
+    expect(upgradeLegacyVariant({ items: [] })).toEqual({ items: [], changed: false });
+    expect(upgradeLegacyVariant({ foregroundAssetId: null, transform: {} })).toEqual({ items: [], changed: true });
   });
 });

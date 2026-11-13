@@ -53,13 +53,28 @@ export interface Transform2D {
   rotationDeg: number;
 }
 
+/** Un élément posé sur le décor : une image avec sa propre transformation. */
+export interface VariantItem {
+  /** Identifiant stable, généré côté client (sert aussi de clé d'édition). */
+  id: string;
+  assetId: string;
+  /** Nom facultatif ; à défaut, le titre de l'image est affiché. */
+  name: string | null;
+  transform: Transform2D;
+  hidden: boolean;
+  locked: boolean;
+}
+
+/**
+ * Variante 2D (V2) : un décor facultatif et une LISTE d'éléments.
+ * L'ordre du tableau est l'ordre de superposition : index 0 au fond, dernier au premier plan.
+ */
 export interface Variant {
   id: string;
   presentationId: string;
   name: string;
   backgroundAssetId: string | null;
-  foregroundAssetId: string | null;
-  transform: Transform2D;
+  items: VariantItem[];
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -68,6 +83,5 @@ export interface Variant {
 /** Ce que l'utilisateur modifie dans le Studio (l'état « éditable » d'une variante). */
 export interface VariantDraft {
   backgroundAssetId: string | null;
-  foregroundAssetId: string | null;
-  transform: Transform2D;
+  items: VariantItem[];
 }

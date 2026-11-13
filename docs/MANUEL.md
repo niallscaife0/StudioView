@@ -1,7 +1,7 @@
 # Manuel d'utilisation
 
 ## L'idée
-Le laboratoire sert à voir une sculpture hors de l'atelier. Tu poses sa photo dans un espace, tu fais varier la place et l'échelle, tu gardes plusieurs essais et tu les compares. Rien ne t'oblige à écrire quoi que ce soit.
+Le laboratoire sert à voir une sculpture hors de l'atelier. Tu poses une ou plusieurs photos dans un espace, tu fais varier leur place et leur échelle, tu gardes plusieurs essais et tu les compares. Rien ne t'oblige à écrire quoi que ce soit.
 
 ## Préparer les images
 - **Photo de la sculpture.** Le mieux est un PNG ou WebP détouré, c'est-à-dire avec un fond transparent. Le laboratoire mesure la transparence à l'import. Une photo brute marche aussi : elle s'affiche comme un rectangle posé sur le décor, et le studio le signale.
@@ -13,10 +13,11 @@ Le laboratoire sert à voir une sculpture hors de l'atelier. Tu poses sa photo d
 2. **Fiche de l'œuvre** : « Importer des photos ». Chaque photo peut être marquée « Détourée » ou « Photo brute ».
 3. **Créer une présentation** : choisis la photo et un décor, puis le studio s'ouvre sur la variante A.
 4. **Studio** :
-   - glisse la sculpture à la souris (ou au doigt) ;
-   - tire le petit carré en bas à droite pour changer la taille, ou utilise la molette, ou pince à deux doigts ;
-   - au clavier, après avoir cliqué dans l'aperçu : flèches pour déplacer, `+` et `-` pour l'échelle, `[` et `]` pour tourner, Maj pour des pas plus grands ;
-   - les curseurs à droite donnent des réglages précis ;
+   - à gauche, clique une photographie pour l'**ajouter** à la composition ; tu peux en ajouter plusieurs, de la même sculpture ou d'une autre (menu des œuvres) ;
+   - clique un élément dans l'aperçu pour le sélectionner : le clic traverse les zones transparentes et atteint l'élément du dessous ;
+   - glisse l'élément sélectionné à la souris (ou au doigt) ; tire le petit carré en bas à droite pour changer sa taille, ou utilise la molette, ou pince à deux doigts ;
+   - à droite, la liste **Éléments** va du premier plan vers le fond : « Vers l'avant » et « Vers le fond » changent la superposition ; « visible / masqué » cache un élément sans le retirer ; « libre / verrouillé » l'empêche de bouger ;
+   - au clavier, après avoir cliqué dans l'aperçu : Tab passe à l'élément suivant, flèches pour déplacer, `+` et `-` pour l'échelle, `[` et `]` pour tourner, Suppr pour retirer, Maj pour des pas plus grands ;
    - « Ajouter un décor » importe un espace sans quitter le studio.
 5. **Enregistrer** (ou Ctrl+S). L'indicateur passe à « Enregistré » seulement quand c'est réellement fait.
 6. **Dupliquer comme variante** : crée B à partir de ce qui est affiché. A garde sa dernière version enregistrée ; rien n'est écrasé.

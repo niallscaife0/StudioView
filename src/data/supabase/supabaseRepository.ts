@@ -14,7 +14,7 @@ import {
 } from '../repository';
 import {
   ARTWORK_COLS, ASSET_COLS, PRESENTATION_COLS, VARIANT_COLS,
-  storagePaths, toArtwork, toAsset, toPresentation, toVariant,
+  itemsToRpc, storagePaths, toArtwork, toAsset, toPresentation, toVariant,
   type ArtworkRow, type AssetRow, type PresentationRow, type VariantRow,
 } from './mapping';
 
@@ -218,41 +218,59 @@ export class SupabaseRepository implements Repository {
   async listVariants() {
     const { data, error } = await this.sb.from('variants').select(VARIANT_COLS).order('created_at');
     if (error) fail(error, 'Variantes');
-    return (data as VariantRow[]).map(toVariant);
+    return (data as unknown as VariantRow[]).map(toVariant);
   }
 
   async getVariant(id: string) {
     const { data, error } = await this.sb.from('variants').select(VARIANT_COLS).eq('id', id).maybeSingle();
     if (error) fail(error, 'Variante');
-    return data ? toVariant(data as VariantRow) : null;
+    return data ? toVariant(data as unknown as VariantRow) : null;
   }
 
   async createVariant(input: NewVariantInput) {
     const { data, error } = await this.sb
       .from('variants')
-      .insert({
-        presentation_id: input.presentationId,
-        name: cleanTitle(input.name, 'Variante'),
-        background_asset_id: input.backgroundAssetId,
-        foreground_asset_id: input.foregroundAssetId,
-        transform: input.transform,
-        note: input.note ?? null,
-      })
-      .select(VARIANT_COLS).single();
+      .insert({ presentation_id: input.presentationId, name: cleanTitle(input.name, 'Variante'), background_asset_id: input.backgroundAssetId })
+      .select('id').single();
     if (error) fail(error, 'Création de la variante');
-    return toVariant(data as VariantRow);
+    const id = (data as { id: string }).id;
+    const rpc = await this.sb.rpc('save_variant', {
+      p_variant_id: id,
+      p_background_asset_id: input.backgroundAssetId,
+      p_note: input.note ?? null,
+      p_items: itemsToRpc(input.items),
+    });
+    if (rpc.error) {
+      // Pas de variante à moitié créée.
+      await this.sb.from('variants').delete().eq('id', id);
+      fail(rpc.error, 'Création de la variante');
+    }
+    return this.requireVariant(id);
+  }
+
+  private async requireVariant(id: string) {
+    const v = await this.getVariant(id);
+    if (!v) throw new NotFoundError('Variante');
+    return v;
   }
 
   async updateVariant(id: string, patch: VariantPatch) {
-    const row: Record<string, unknown> = {};
-    if (patch.name !== undefined) row.name = cleanTitle(patch.name, 'Variante');
-    if (patch.backgroundAssetId !== undefined) row.background_asset_id = patch.backgroundAssetId;
-    if (patch.foregroundAssetId !== undefined) row.foreground_asset_id = patch.foregroundAssetId;
-    if (patch.transform !== undefined) row.transform = patch.transform;
-    if (patch.note !== undefined) row.note = patch.note;
-    const { data, error } = await this.sb.from('variants').update(row).eq('id', id).select(VARIANT_COLS).single();
-    if (error) fail(error, 'Enregistrement de la variante');
-    return toVariant(data as VariantRow);
+    if (patch.name !== undefined) {
+      const { error } = await this.sb.from('variants').update({ name: cleanTitle(patch.name, 'Variante') }).eq('id', id).select('id').single();
+      if (error) fail(error, 'Enregistrement de la variante');
+    }
+    if (patch.items !== undefined || patch.backgroundAssetId !== undefined || patch.note !== undefined) {
+      // Décor, note et éléments sont écrits ensemble, dans une seule transaction SQL.
+      const current = await this.requireVariant(id);
+      const { error } = await this.sb.rpc('save_variant', {
+        p_variant_id: id,
+        p_background_asset_id: patch.backgroundAssetId !== undefined ? patch.backgroundAssetId : current.backgroundAssetId,
+        p_note: patch.note !== undefined ? patch.note : current.note,
+        p_items: itemsToRpc(patch.items ?? current.items),
+      });
+      if (error) fail(error, 'Enregistrement de la variante');
+    }
+    return this.requireVariant(id);
   }
 
   async deleteVariant(id: string) {

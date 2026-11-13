@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
-import type { Asset, Transform2D } from '../../domain/types';
+import type { Asset, VariantItem } from '../../domain/types';
 import { loadBitmap } from '../assets/imageCache';
 import { frameAspect, outputSize, renderComposition } from '../studio2d/compose';
 
@@ -10,8 +10,8 @@ const WIDTHS = [1600, 2400, 3200];
 
 interface Props {
   background: Asset | null;
-  foreground: Asset | null;
-  transform: Transform2D;
+  items: VariantItem[];
+  assets: Asset[];
   fileBase: string;
   onClose: () => void;
 }
@@ -27,7 +27,7 @@ export function safeFilename(s: string): string {
 }
 
 /** Export PNG du composite tel qu'il est affiché (W6). Les notes ne sont jamais incluses. */
-export function ExportDialog({ background, foreground, transform, fileBase, onClose }: Props) {
+export function ExportDialog({ background, items, assets, fileBase, onClose }: Props) {
   const { repo } = useApp();
   const toast = useToast();
   const [width, setWidth] = useState(1600);
@@ -38,12 +38,20 @@ export function ExportDialog({ background, foreground, transform, fileBase, onCl
   async function run() {
     setBusy(true);
     try {
-      const [bg, fg] = await Promise.all([
+      const byId = new Map(assets.map((a) => [a.id, a]));
+      const visible = items.filter((i) => !i.hidden && byId.has(i.assetId));
+      const [bg, ...bitmaps] = await Promise.all([
         background ? loadBitmap(repo, background) : Promise.resolve(null),
-        foreground ? loadBitmap(repo, foreground) : Promise.resolve(null),
+        ...visible.map((i) => loadBitmap(repo, byId.get(i.assetId)!)),
       ]);
       const blob = await renderComposition(
-        { background: bg, foreground: fg, foregroundSize: foreground ? { w: foreground.width, h: foreground.height } : null, transform },
+        {
+          background: bg,
+          items: visible.map((i, k) => {
+            const a = byId.get(i.assetId)!;
+            return { image: bitmaps[k], size: { w: a.width, h: a.height }, transform: i.transform };
+          }),
+        },
         background ? { w: background.width, h: background.height } : null,
         width,
         label,
@@ -71,7 +79,7 @@ export function ExportDialog({ background, foreground, transform, fileBase, onCl
       actions={
         <>
           <button type="button" className="button" onClick={onClose} disabled={busy}>Annuler</button>
-          <button type="button" className="button button-primary" onClick={run} disabled={busy || !foreground}>
+          <button type="button" className="button button-primary" onClick={run} disabled={busy || !items.some((i) => !i.hidden)}>
             {busy ? 'Rendu…' : 'Télécharger le PNG'}
           </button>
         </>
@@ -91,7 +99,7 @@ export function ExportDialog({ background, foreground, transform, fileBase, onCl
       <label className="check">
         <input type="checkbox" checked={label} onChange={(e) => setLabel(e.target.checked)} /> Inscrire « Simulation 2D » dans l’angle
       </label>
-      <p className="muted">L’image reprend exactement l’état affiché dans le studio, y compris les modifications non enregistrées. La note personnelle n’est pas incluse.</p>
+      <p className="muted">L’image reprend exactement l’état affiché, y compris les modifications non enregistrées. Les éléments masqués et la note personnelle ne sont pas inclus.</p>
     </Modal>
   );
 }

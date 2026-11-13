@@ -1,54 +1,66 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useApp } from '../../app/AppContext';
 import { clampTransform } from '../../domain/transform';
-import type { Asset, Transform2D } from '../../domain/types';
-import { useBitmap } from '../assets/imageCache';
-import { drawComposition, foregroundRect, frameAspect, hitForeground, hitHandle, type Size } from './compose';
+import type { Asset, Transform2D, VariantItem } from '../../domain/types';
+import { alphaMaskFor, useBitmap, useBitmaps } from '../assets/imageCache';
+import { drawComposition, foregroundRect, frameAspect, hitHandle, pickItem, type Size } from './compose';
 
 interface Props {
   background: Asset | null;
-  foreground: Asset | null;
-  transform: Transform2D;
-  /** Absent : aperçu en lecture seule (comparateur). */
-  onChange?: (t: Transform2D) => void;
-  onCommit?: () => void;
+  /** Du fond vers le premier plan. */
+  items: VariantItem[];
+  assets: Asset[];
   label: string;
+  /** Absents : aperçu en lecture seule (comparateur). */
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
+  onChangeItem?: (id: string, t: Transform2D) => void;
+  onCommit?: () => void;
+  onRemoveSelected?: () => void;
 }
 
 type Gesture =
-  | { kind: 'move'; startX: number; startY: number; t0: Transform2D }
-  | { kind: 'resize'; dist0: number; t0: Transform2D }
-  | { kind: 'pinch'; dist0: number; t0: Transform2D };
+  | { kind: 'move'; startX: number; startY: number; t0: Transform2D; id: string }
+  | { kind: 'resize'; dist0: number; t0: Transform2D; id: string }
+  | { kind: 'pinch'; dist0: number; t0: Transform2D; id: string };
 
 const HANDLE = 14;
 const SELECTION_COLOR = '#2f7a6e';
 
-/** Aperçu de composition. Dessine avec drawComposition, exactement comme l'export. */
-export function StudioCanvas({ background, foreground, transform, onChange, onCommit, label }: Props) {
+/** Aperçu de composition à plusieurs éléments. Dessine avec drawComposition, exactement comme l'export. */
+export function StudioCanvas({ background, items, assets, label, selectedId = null, onSelect, onChangeItem, onCommit, onRemoveSelected }: Props) {
   const { repo } = useApp();
+  const interactive = !!onChangeItem;
   const bg = useBitmap(repo, background);
-  const fg = useBitmap(repo, foreground);
+  const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
+  const itemAssets = useMemo(
+    () => items.map((i) => byId.get(i.assetId)).filter((a): a is Asset => !!a),
+    [items, byId],
+  );
+  const fg = useBitmaps(repo, itemAssets);
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [boxSize, setBoxSize] = useState<Size>({ w: 0, h: 0 });
   const gesture = useRef<Gesture | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const interactive = !!onChange;
 
   const aspect = frameAspect(background ? { w: background.width, h: background.height } : null);
   const display: Size =
     boxSize.w === 0 ? { w: 0, h: 0 } : boxSize.w / boxSize.h > aspect
       ? { w: Math.floor(boxSize.h * aspect), h: Math.floor(boxSize.h) }
       : { w: Math.floor(boxSize.w), h: Math.floor(boxSize.w / aspect) };
-  const fgSize: Size | null = foreground ? { w: foreground.width, h: foreground.height } : null;
+
+  const sizeOf = useCallback((it: VariantItem): Size => {
+    const a = byId.get(it.assetId);
+    return a ? { w: a.width, h: a.height } : { w: 1, h: 1 };
+  }, [byId]);
+  const selectedIndex = items.findIndex((i) => i.id === selectedId);
+  const selected = selectedIndex >= 0 ? items[selectedIndex] : null;
 
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const r = entry.contentRect;
-      setBoxSize({ w: r.width, h: r.height });
-    });
+    const ro = new ResizeObserver(([entry]) => setBoxSize({ w: entry.contentRect.width, h: entry.contentRect.height }));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -65,56 +77,85 @@ export function StudioCanvas({ background, foreground, transform, onChange, onCo
     drawComposition(
       ctx,
       display,
-      { background: bg.bitmap, foreground: fg.bitmap, foregroundSize: fgSize, transform },
-      { selection: interactive && fg.bitmap ? { color: SELECTION_COLOR, handleRadius: HANDLE } : null },
+      {
+        background: bg.bitmap,
+        items: items.map((it) => ({ image: fg.bitmaps.get(it.assetId) ?? null, size: sizeOf(it), transform: it.transform, hidden: it.hidden })),
+      },
+      { selection: interactive && selectedIndex >= 0 ? { index: selectedIndex, color: SELECTION_COLOR, handleRadius: HANDLE } : null },
     );
-  }, [display.w, display.h, bg.bitmap, fg.bitmap, fgSize?.w, fgSize?.h, transform, interactive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [display.w, display.h, bg.bitmap, fg.bitmaps, items, selectedIndex, interactive, sizeOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const point = (e: PointerEvent) => {
     const r = canvas.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  const emit = useCallback((t: Transform2D) => onChange?.(clampTransform(t)), [onChange]);
+  const pick = (x: number, y: number) =>
+    pickItem(
+      x, y, display,
+      items.map((it) => {
+        const a = byId.get(it.assetId);
+        const bm = fg.bitmaps.get(it.assetId);
+        return { size: sizeOf(it), transform: it.transform, hidden: it.hidden, locked: it.locked, alpha: a && bm ? alphaMaskFor(a, bm) : null };
+      }),
+    );
+
+  const emit = (id: string, t: Transform2D) => onChangeItem?.(id, clampTransform(t));
 
   function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
-    if (!interactive || !fgSize) return;
+    if (!interactive) return;
     const p = point(e);
     pointers.current.set(e.pointerId, p);
     canvas.current!.setPointerCapture(e.pointerId);
-    const rect = foregroundRect(display, fgSize, transform);
-    if (pointers.current.size === 2) {
+    if (pointers.current.size === 2 && selected && !selected.locked) {
       const [a, b] = [...pointers.current.values()];
-      gesture.current = { kind: 'pinch', dist0: Math.hypot(a.x - b.x, a.y - b.y), t0: transform };
-    } else if (hitHandle(p.x, p.y, rect, HANDLE)) {
-      gesture.current = { kind: 'resize', dist0: Math.hypot(p.x - rect.cx, p.y - rect.cy), t0: transform };
-    } else if (hitForeground(p.x, p.y, rect, 6)) {
-      gesture.current = { kind: 'move', startX: p.x, startY: p.y, t0: transform };
+      gesture.current = { kind: 'pinch', dist0: Math.hypot(a.x - b.x, a.y - b.y), t0: selected.transform, id: selected.id };
+      return;
     }
+    // La poignée de l'élément déjà sélectionné a priorité.
+    if (selected && !selected.locked && !selected.hidden) {
+      const rect = foregroundRect(display, sizeOf(selected), selected.transform);
+      if (hitHandle(p.x, p.y, rect, HANDLE)) {
+        gesture.current = { kind: 'resize', dist0: Math.hypot(p.x - rect.cx, p.y - rect.cy), t0: selected.transform, id: selected.id };
+        return;
+      }
+    }
+    const idx = pick(p.x, p.y);
+    if (idx < 0) {
+      onSelect?.(null);
+      return;
+    }
+    const it = items[idx];
+    if (it.id !== selectedId) onSelect?.(it.id);
+    gesture.current = { kind: 'move', startX: p.x, startY: p.y, t0: it.transform, id: it.id };
   }
 
   function onPointerMove(e: PointerEvent<HTMLCanvasElement>) {
-    if (!interactive || !fgSize) return;
+    if (!interactive) return;
     const p = point(e);
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, p);
     const g = gesture.current;
     const c = canvas.current!;
     if (!g) {
-      const rect = foregroundRect(display, fgSize, transform);
-      c.style.cursor = hitHandle(p.x, p.y, rect, HANDLE) ? 'nwse-resize' : hitForeground(p.x, p.y, rect, 6) ? 'grab' : 'default';
+      let cursor = 'default';
+      if (selected && !selected.locked && hitHandle(p.x, p.y, foregroundRect(display, sizeOf(selected), selected.transform), HANDLE)) cursor = 'nwse-resize';
+      else if (pick(p.x, p.y) >= 0) cursor = 'grab';
+      c.style.cursor = cursor;
       return;
     }
+    const it = items.find((i) => i.id === g.id);
+    if (!it) return;
     if (g.kind === 'move') {
       c.style.cursor = 'grabbing';
-      emit({ ...g.t0, x: g.t0.x + (p.x - g.startX) / display.w, y: g.t0.y + (p.y - g.startY) / display.h });
+      emit(g.id, { ...g.t0, x: g.t0.x + (p.x - g.startX) / display.w, y: g.t0.y + (p.y - g.startY) / display.h });
     } else if (g.kind === 'resize') {
-      const rect = foregroundRect(display, fgSize, g.t0);
+      const rect = foregroundRect(display, sizeOf(it), g.t0);
       const d = Math.hypot(p.x - rect.cx, p.y - rect.cy);
-      if (g.dist0 > 0) emit({ ...g.t0, scale: g.t0.scale * (d / g.dist0) });
+      if (g.dist0 > 0) emit(g.id, { ...g.t0, scale: g.t0.scale * (d / g.dist0) });
     } else if (g.kind === 'pinch' && pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (g.dist0 > 0) emit({ ...g.t0, scale: g.t0.scale * (d / g.dist0) });
+      if (g.dist0 > 0) emit(g.id, { ...g.t0, scale: g.t0.scale * (d / g.dist0) });
     }
   }
 
@@ -125,22 +166,32 @@ export function StudioCanvas({ background, foreground, transform, onChange, onCo
     if (canvas.current) canvas.current.style.cursor = 'default';
   }
 
-  // Molette : échelle. Écouteur non passif pour pouvoir empêcher le défilement de la page.
+  // Molette : échelle de l'élément sélectionné. Écouteur non passif pour empêcher le défilement de la page.
+  const wheelTarget = selected && !selected.locked ? selected : null;
   useEffect(() => {
     const c = canvas.current;
-    if (!c || !interactive) return;
+    if (!c || !interactive || !wheelTarget) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      emit({ ...transform, scale: transform.scale * Math.exp(-e.deltaY * 0.0015) });
+      onChangeItem?.(wheelTarget.id, clampTransform({ ...wheelTarget.transform, scale: wheelTarget.transform.scale * Math.exp(-e.deltaY * 0.0015) }));
     };
     c.addEventListener('wheel', onWheel, { passive: false });
     return () => c.removeEventListener('wheel', onWheel);
-  }, [interactive, transform, emit]);
+  }, [interactive, wheelTarget, onChangeItem]);
 
   function onKeyDown(e: KeyboardEvent) {
     if (!interactive) return;
+    // Tab dans l'aperçu : passer à l'élément suivant (Maj+Tab : précédent), puis sortir de l'aperçu.
+    if (e.key === 'Tab' && items.length > 0) {
+      const next = selectedIndex + (e.shiftKey ? -1 : 1);
+      if (selectedIndex === -1 && !e.shiftKey) { e.preventDefault(); onSelect?.(items[0].id); return; }
+      if (next >= 0 && next < items.length) { e.preventDefault(); onSelect?.(items[next].id); return; }
+      return;
+    }
+    if (!selected || selected.locked) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); onRemoveSelected?.(); return; }
     const step = e.shiftKey ? 0.05 : 0.005;
-    const t = transform;
+    const t = selected.transform;
     const map: Record<string, Transform2D> = {
       ArrowLeft: { ...t, x: t.x - step },
       ArrowRight: { ...t, x: t.x + step },
@@ -155,12 +206,13 @@ export function StudioCanvas({ background, foreground, transform, onChange, onCo
     const next = map[e.key];
     if (next) {
       e.preventDefault();
-      emit(next);
+      emit(selected.id, next);
     }
   }
 
   const loading = bg.loading || fg.loading;
-  const loadError = bg.error || fg.error;
+  const loadError = bg.error || fg.errors[0] || null;
+  const selName = selected ? selected.name ?? byId.get(selected.assetId)?.title ?? 'élément' : null;
 
   return (
     <div className="stage" ref={box}>
@@ -173,7 +225,11 @@ export function StudioCanvas({ background, foreground, transform, onChange, onCo
           aria-roledescription={interactive ? 'zone de composition' : undefined}
           aria-label={
             interactive
-              ? `${label}. Position ${Math.round(transform.x * 100)} %, ${Math.round(transform.y * 100)} % ; hauteur ${Math.round(transform.scale * 100)} % du cadre. Flèches : déplacer ; plus et moins : échelle ; crochets : rotation ; Maj pour des pas plus grands.`
+              ? `${label}. ${items.length} élément${items.length > 1 ? 's' : ''}. ${
+                  selected
+                    ? `Sélection : ${selName}, position ${Math.round(selected.transform.x * 100)} %, ${Math.round(selected.transform.y * 100)} %, hauteur ${Math.round(selected.transform.scale * 100)} % du cadre.`
+                    : 'Aucun élément sélectionné.'
+                } Tab : élément suivant ; flèches : déplacer ; plus et moins : échelle ; crochets : rotation ; Suppr : retirer.`
               : label
           }
           onPointerDown={onPointerDown}
@@ -185,9 +241,9 @@ export function StudioCanvas({ background, foreground, transform, onChange, onCo
           className={interactive ? 'stage-canvas is-interactive' : 'stage-canvas'}
         />
         <span className="stage-tag">Simulation 2D</span>
-        {loading && <span className="stage-status" role="status">Chargement de l’image…</span>}
+        {loading && <span className="stage-status" role="status">Chargement des images…</span>}
         {loadError && <span className="stage-status stage-error" role="alert">{loadError}</span>}
-        {!foreground && !loading && <span className="stage-status">Choisis une photographie de la sculpture.</span>}
+        {items.length === 0 && !loading && <span className="stage-status">{interactive ? 'Ajoute une photographie depuis le panneau de gauche.' : 'Aucun élément dans cette variante.'}</span>}
       </div>
     </div>
   );

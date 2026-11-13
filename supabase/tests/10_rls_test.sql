@@ -17,9 +17,37 @@ values ('a2000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-0000000
         'aaaaaaaa-0000-0000-0000-000000000001/a2000000-0000-0000-0000-000000000001/thumb.webp',
         'image/png', 1000, 800, 1200, true, 'Vue détourée');
 insert into public.presentations (id, artwork_id, title) values ('a3000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001', 'Essai');
-insert into public.variants (id, presentation_id, name, foreground_asset_id, transform)
-values ('a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000001', 'A',
-        'a2000000-0000-0000-0000-000000000001', '{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0}');
+insert into public.variants (id, presentation_id, name) values ('a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000001', 'A');
+select public.save_variant('a4000000-0000-0000-0000-000000000001', null, '  ', '[
+  {"id":"a5000000-0000-0000-0000-000000000001","assetId":"a2000000-0000-0000-0000-000000000001","name":null,"transform":{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0},"hidden":false,"locked":false},
+  {"id":"a5000000-0000-0000-0000-000000000002","assetId":"a2000000-0000-0000-0000-000000000001","name":"devant","transform":{"schemaVersion":1,"x":0.7,"y":0.5,"scale":0.3,"rotationDeg":0},"hidden":false,"locked":true}
+]'::jsonb);
+do $$ begin
+  if (select count(*) from public.variant_items where variant_id = 'a4000000-0000-0000-0000-000000000001') <> 2 then raise exception 'ÉCHEC : save_variant doit écrire 2 éléments'; end if;
+  if (select z_index from public.variant_items where id = 'a5000000-0000-0000-0000-000000000002') <> 1 then raise exception 'ÉCHEC : ordre de superposition non respecté'; end if;
+  if (select note from public.variants where id = 'a4000000-0000-0000-0000-000000000001') is not null then raise exception 'ÉCHEC : une note vide doit devenir NULL'; end if;
+end $$;
+-- Réordonner : la liste est remplacée d'un bloc, les identifiants sont conservés
+select public.save_variant('a4000000-0000-0000-0000-000000000001', null, 'note', '[
+  {"id":"a5000000-0000-0000-0000-000000000002","assetId":"a2000000-0000-0000-0000-000000000001","name":"devant","transform":{"schemaVersion":1,"x":0.7,"y":0.5,"scale":0.3,"rotationDeg":0},"hidden":false,"locked":true},
+  {"id":"a5000000-0000-0000-0000-000000000001","assetId":"a2000000-0000-0000-0000-000000000001","name":null,"transform":{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0},"hidden":true,"locked":false}
+]'::jsonb);
+do $$ begin
+  if (select z_index from public.variant_items where id = 'a5000000-0000-0000-0000-000000000002') <> 0 then raise exception 'ÉCHEC : réordonnancement non appliqué'; end if;
+  if not (select hidden from public.variant_items where id = 'a5000000-0000-0000-0000-000000000001') then raise exception 'ÉCHEC : hidden non enregistré'; end if;
+end $$;
+-- Un élément invalide annule TOUT l'enregistrement (atomicité)
+do $$ begin
+  begin
+    perform public.save_variant('a4000000-0000-0000-0000-000000000001', null, 'cassé', '[
+      {"assetId":"a2000000-0000-0000-0000-000000000001","transform":{"schemaVersion":1,"x":0.1,"y":0.1,"scale":0.1,"rotationDeg":0}},
+      {"assetId":"a2000000-0000-0000-0000-000000000001","transform":{"schemaVersion":9}}
+    ]'::jsonb);
+    raise exception 'ÉCHEC : élément invalide accepté';
+  exception when check_violation then null; end;
+  if (select count(*) from public.variant_items where variant_id = 'a4000000-0000-0000-0000-000000000001') <> 2 then raise exception 'ÉCHEC : enregistrement non atomique (éléments perdus)'; end if;
+  if (select note from public.variants where id = 'a4000000-0000-0000-0000-000000000001') <> 'note' then raise exception 'ÉCHEC : enregistrement non atomique (note modifiée)'; end if;
+end $$;
 insert into storage.objects (bucket_id, name) values ('media', 'aaaaaaaa-0000-0000-0000-000000000001/a2000000-0000-0000-0000-000000000001/original.png');
 
 do $$ begin
@@ -47,7 +75,7 @@ end $$;
 -- Transform invalide refusé
 do $$ begin
   begin
-    update public.variants set transform = '{"schemaVersion":2}' where id = 'a4000000-0000-0000-0000-000000000001';
+    update public.variant_items set transform = '{"schemaVersion":2}' where variant_id = 'a4000000-0000-0000-0000-000000000001';
     raise exception 'ÉCHEC : transform invalide accepté';
   exception when check_violation then null; end;
 end $$;
@@ -79,6 +107,7 @@ do $$ begin
   if (select count(*) from public.artworks) <> 0 then raise exception 'ÉCHEC : B voit les œuvres de A'; end if;
   if (select count(*) from public.assets) <> 0 then raise exception 'ÉCHEC : B voit les images de A'; end if;
   if (select count(*) from public.variants) <> 0 then raise exception 'ÉCHEC : B voit les variantes de A'; end if;
+  if (select count(*) from public.variant_items) <> 0 then raise exception 'ÉCHEC : B voit les éléments de A'; end if;
   if (select count(*) from storage.objects) <> 0 then raise exception 'ÉCHEC : B voit les fichiers de A'; end if;
 end $$;
 
@@ -106,13 +135,29 @@ end $$;
 -- Relations croisées : B crée sa propre présentation et tente d'y utiliser l'image de A
 insert into public.artworks (id, title) values ('b1000000-0000-0000-0000-000000000001', 'Œuvre de B');
 insert into public.presentations (id, artwork_id, title) values ('b3000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'P de B');
+insert into public.variants (id, presentation_id, name) values ('b4000000-0000-0000-0000-000000000001', 'b3000000-0000-0000-0000-000000000001', 'X');
 do $$ begin
   begin
-    insert into public.variants (presentation_id, name, foreground_asset_id, transform)
-    values ('b3000000-0000-0000-0000-000000000001', 'X', 'a2000000-0000-0000-0000-000000000001',
-            '{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0}');
+    perform public.save_variant('b4000000-0000-0000-0000-000000000001', null, null,
+      '[{"assetId":"a2000000-0000-0000-0000-000000000001","transform":{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0}}]'::jsonb);
     raise exception 'ÉCHEC : B a utilisé l''image de A';
   exception when foreign_key_violation then null; end;
+  -- B ne peut pas enregistrer dans la variante de A
+  begin
+    perform public.save_variant('a4000000-0000-0000-0000-000000000001', null, 'piraté', '[]'::jsonb);
+    raise exception 'ÉCHEC : B a enregistré dans la variante de A';
+  exception when insufficient_privilege then null; end;
+  -- B ne peut pas glisser un élément dans la variante de A
+  begin
+    insert into public.variant_items (variant_id, asset_id, z_index, transform)
+    values ('a4000000-0000-0000-0000-000000000001', 'a2000000-0000-0000-0000-000000000001', 9, '{"schemaVersion":1,"x":0.5,"y":0.5,"scale":0.6,"rotationDeg":0}');
+    raise exception 'ÉCHEC : B a inséré un élément dans la variante de A';
+  exception when foreign_key_violation then null; end;
+end $$;
+do $$ declare n int; begin
+  delete from public.variant_items where variant_id = 'a4000000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'ÉCHEC : B a supprimé des éléments de A'; end if;
 end $$;
 
 -- B tente de rattacher une présentation à l'œuvre de A
@@ -144,6 +189,33 @@ do $$ begin
   if (select count(*) from public.assets) <> 1 then raise exception 'ÉCHEC : la photo doit rester dans Ressources'; end if;
   if (select artwork_id from public.assets) is not null then raise exception 'ÉCHEC : la photo doit perdre son œuvre'; end if;
   if (select owner_id from public.assets) <> 'aaaaaaaa-0000-0000-0000-000000000001' then raise exception 'ÉCHEC : owner_id effacé par la cascade'; end if;
+end $$;
+
+-- ---------- Reprise des données V1 (propriétaire C) ----------
+set request.jwt.claim.sub = 'cccccccc-0000-0000-0000-000000000003';
+do $$ declare it record; begin
+  if (select count(*) from public.variant_items where variant_id = 'c4000000-0000-0000-0000-000000000001') <> 1 then
+    raise exception 'ÉCHEC reprise : la variante V1 doit avoir exactement un élément';
+  end if;
+  select * into it from public.variant_items where variant_id = 'c4000000-0000-0000-0000-000000000001';
+  if it.asset_id <> 'c2000000-0000-0000-0000-000000000001' or it.z_index <> 0
+     or it.owner_id <> 'cccccccc-0000-0000-0000-000000000003'
+     or it.transform <> '{"schemaVersion":1,"x":0.31,"y":0.62,"scale":0.44,"rotationDeg":12.5}'::jsonb then
+    raise exception 'ÉCHEC reprise : élément différent de la photo V1';
+  end if;
+  if (select count(*) from public.variant_items where variant_id = 'c4000000-0000-0000-0000-000000000002') <> 0 then
+    raise exception 'ÉCHEC reprise : une variante sans photo ne doit pas recevoir d''élément';
+  end if;
+end $$;
+
+-- ---------- Anonyme : aucune écriture par la fonction ----------
+reset request.jwt.claim.sub;
+set role anon;
+do $$ begin
+  begin
+    perform public.save_variant('c4000000-0000-0000-0000-000000000001', null, null, '[]'::jsonb);
+    raise exception 'ÉCHEC : anon a pu appeler save_variant';
+  exception when insufficient_privilege then null; end;
 end $$;
 
 reset role;
