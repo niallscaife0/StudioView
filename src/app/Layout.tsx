@@ -12,6 +12,7 @@ export function Layout() {
         <NavLink to="/atelier" className="brand">Laboratoire</NavLink>
         <nav aria-label="Navigation principale" className="topnav">
           <NavLink to="/atelier">Atelier</NavLink>
+          <NavLink to="/accrochages">Accrochages</NavLink>
           <NavLink to="/variantes">Variantes</NavLink>
           <NavLink to="/ressources">Ressources</NavLink>
         </nav>

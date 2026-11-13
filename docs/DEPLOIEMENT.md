@@ -7,7 +7,7 @@ Utilise deux projets Supabase : **recette** (tests, utilisateurs fictifs) et **p
 ## 1. Supabase
 
 1. Crée le projet. La migration exige PostgreSQL 15 ou plus (clause `on delete set null (colonne)`), ce qui est le cas des projets Supabase actuels.
-2. Applique **dans l'ordre** les fichiers de `supabase/migrations/` (`…0001_init.sql`, puis `…0002_v2_variant_items.sql`), soit dans l'éditeur SQL, soit avec la CLI (`supabase link` puis `supabase db push`). La seconde migration reprend automatiquement d'éventuelles variantes V1.
+2. Applique **dans l'ordre** les fichiers de `supabase/migrations/` (`…0001_init.sql`, `…0002_v2_variant_items.sql`, puis `…0003_v2_rooms_placements.sql`), soit dans l'éditeur SQL, soit avec la CLI (`supabase link` puis `supabase db push`). La seconde migration reprend automatiquement d'éventuelles variantes V1.
 3. Vérifie dans Storage que le bucket `media` existe et qu'il est **privé**.
 4. **Authentication, réglages** :
    - désactive les inscriptions (« Allow new users to sign up ») ;

@@ -23,7 +23,10 @@ export function ComparePage() {
         <button type="button" className="button" onClick={reload}>Réessayer</button>
       </section>
     );
-  const [variants, presentations, artworks, assets] = data!;
+  const [allVariants, allPresentations, artworks, assets] = data!;
+  // La comparaison d'accrochages (points de vue) relève de la phase 4 : ici, variantes 2D seulement.
+  const presentations = allPresentations.filter((p) => p.mode === '2d');
+  const variants = allVariants.filter((v) => presentations.some((p) => p.id === v.presentationId));
   if (variants.length < 2)
     return (
       <section className="page">

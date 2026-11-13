@@ -24,6 +24,22 @@ Le laboratoire sert à voir une sculpture hors de l'atelier. Tu poses une ou plu
 7. **Comparer** : deux variantes côte à côte, y compris de sculptures différentes (page Variantes, coche deux lignes).
 8. **Exporter** : un PNG à la largeur choisie, avec la mention « Simulation 2D » si tu la gardes. La note personnelle n'est jamais incluse.
 
+## Accrocher dans une salle
+1. **Hauteur réelle** : sur la fiche de chaque œuvre, indique sa hauteur en centimètres. Sans elle, l'œuvre ne peut pas être placée : le laboratoire ne devine jamais une taille.
+2. **Accrochages → Nouvelle salle** : longueur, largeur, hauteur sous plafond, couleur des murs et du sol, lumière.
+3. **Nouvel accrochage** : tu arrives sur la **vue en plan**, la salle vue de dessus. Le « mur d'entrée » est en haut.
+4. **Placer** : clique « Placer » à côté d'une œuvre. Elle arrive au centre. Glisse-la, ou règle ses distances aux murs à droite. Le trait représente la photo vue de dessus ; le petit trait indique sa face. Les pointillés donnent les distances aux quatre murs.
+5. **Salle** : bascule sur l'onglet « Salle » pour entrer. Clique dans l'image, puis :
+   - flèches haut / bas, ou Z / S : avancer, reculer ;
+   - Q / D : pas de côté ; flèches gauche / droite : tourner ;
+   - glisser avec la souris ou le doigt : regarder autour ;
+   - Maj : marcher plus vite ; sur téléphone, un joystick apparaît en bas à gauche.
+6. **Repères** : affiche la silhouette humaine et règle la hauteur des yeux pour juger l'échelle. Le triangle bleu du plan montre où tu te tiens ; tu peux le glisser.
+7. **Variantes** : « Dupliquer comme variante » crée un second accrochage dans la même salle, sans toucher au premier.
+8. **Exporter la vue** : un PNG de ce que tu vois, avec la mention « Simulation 2,5D ».
+
+Les photos restent plates : en tournant autour d'une pièce, tu la verras s'amincir. Tant qu'elles ne sont pas détourées, elles apparaissent comme des panneaux rectangulaires.
+
 ## Si quelque chose échoue
 - « Non synchronisé — Réessayer » : l'enregistrement n'a pas abouti. Tes réglages restent à l'écran ; réessaie quand le réseau revient. Ne ferme pas l'onglet avant : le navigateur t'avertira.
 - Une image utilisée dans des variantes ne peut pas être supprimée sans choix explicite : soit tu annules, soit tu supprimes aussi ces variantes.

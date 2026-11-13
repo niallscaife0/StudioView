@@ -281,6 +281,68 @@ label { font-size: 0.875rem; }
 .sliders { border: 0; padding: 0; margin: 0; display: grid; gap: 0.75rem; min-width: 0; }
 .sliders:disabled { opacity: 0.5; }
 
+/* ---------- Salles et accrochages ---------- */
+.height-field { display: flex; gap: 0.5rem 0.75rem; align-items: center; flex-wrap: wrap; margin: 0.25rem 0 0; }
+.height-field input { width: 7rem; }
+.room-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem 1rem; padding: 1rem; border: 1px solid var(--line); margin: 1rem 0; align-items: end; }
+.room-form label { display: grid; gap: 0.25rem; }
+.room-form input[type='number'], .room-form select { width: 100%; }
+.room-form input[type='color'] { width: 100%; height: 2.25rem; padding: 2px; border: 1px solid var(--line); background: var(--surface); }
+.room-form-title { grid-column: 1 / -1; }
+.room-form-title input { width: min(24rem, 100%); }
+.room-form .button-row { grid-column: 1 / -1; margin-top: 0; }
+.room-block h2 { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.room-dims { font-weight: 400; font-stretch: 100%; font-size: 0.875rem; }
+.swatch { display: inline-block; width: 0.9rem; height: 0.9rem; border: 1px solid var(--line); align-self: center; }
+
+.studio-bar .view-switch { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.view-switch .tab { margin: 0; border-bottom: 0; padding: 0.35rem 1rem; }
+.view-switch .tab.is-active { background: var(--ink); color: var(--wall); }
+
+.place-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.place-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 0.5rem; align-items: center; }
+.place-info { display: grid; min-width: 0; }
+.place-title { font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.height-form { display: flex; gap: 0.25rem; }
+.height-form input { width: 100%; min-width: 0; min-height: 1.9rem; padding: 0.15rem 0.35rem; font-size: 0.8rem; }
+.small-number { display: grid; gap: 0.2rem; }
+.small-number input { width: 6rem; }
+.num-grid { display: grid; gap: 0.5rem; }
+.num-grid label { display: grid; gap: 0.2rem; }
+.num-grid input { width: 7rem; }
+.distances { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; color: var(--ink-2); }
+
+.plan-view, .room-view { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
+.plan-view { padding: 1rem; }
+.plan-view svg { flex: 1; min-width: 0; min-height: 0; touch-action: none; user-select: none; }
+.plan-floor { opacity: 0.9; }
+.plan-walls { fill: none; stroke: #e9eae7; }
+.plan-dim { fill: #cfd1ce; }
+.plan-note { fill: rgb(0 0 0 / 0.45); }
+.plan-hit { fill: transparent; }
+.plan-item { cursor: grab; outline: none; }
+.plan-panel { stroke: #1e2226; stroke-linecap: round; }
+.plan-face { stroke: #1e2226; }
+.plan-label { fill: #1e2226; paint-order: stroke; stroke: rgb(255 255 255 / 0.6); stroke-width: 3px; }
+.plan-item.is-selected .plan-panel, .plan-item.is-selected .plan-face { stroke: var(--accent); }
+.plan-item:focus-visible .plan-hit { stroke: var(--focus); stroke-width: 4px; }
+.plan-cotes line { stroke: rgb(0 0 0 / 0.4); stroke-dasharray: 8 8; }
+.plan-cotes text { fill: #1e2226; paint-order: stroke; stroke: rgb(255 255 255 / 0.7); stroke-width: 3px; }
+.plan-silhouette { cursor: grab; }
+.plan-silhouette circle { fill: rgb(70 74 78 / 0.75); }
+.plan-silhouette text { fill: #1e2226; }
+.plan-camera { cursor: grab; }
+.plan-camera path { fill: #1b5fd1; stroke: #fff; stroke-width: 2px; }
+
+.room-view { outline: none; cursor: grab; touch-action: none; }
+.room-view:active { cursor: grabbing; }
+.room-view:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.room-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.room-hint { position: absolute; left: 50%; top: 1rem; transform: translateX(-50%); background: rgb(0 0 0 / 0.6); color: #fff; padding: 0.4rem 0.8rem; border-radius: var(--radius); font-size: 0.85rem; pointer-events: none; max-width: calc(100% - 2rem); text-align: center; }
+.joystick { position: absolute; left: 1rem; bottom: 1rem; width: 96px; height: 96px; border-radius: 50%; background: rgb(255 255 255 / 0.18); border: 1px solid rgb(255 255 255 / 0.5); display: none; place-items: center; touch-action: none; }
+.joystick span { width: 34px; height: 34px; border-radius: 50%; background: rgb(255 255 255 / 0.6); }
+@media (pointer: coarse) { .joystick { display: grid; } }
+
 /* ---------- Comparaison ---------- */
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
 .compare-side { display: grid; gap: 0.75rem; align-content: start; min-width: 0; }

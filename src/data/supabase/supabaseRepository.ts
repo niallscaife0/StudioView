@@ -1,8 +1,10 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import type { Asset } from '../../domain/types';
+import { cleanRoomInput } from '../local/localRepository';
 import {
   AssetInUseError,
   NotFoundError,
+  RoomInUseError,
   SyncError,
   cleanTitle,
   variantsUsingAsset,
@@ -10,12 +12,13 @@ import {
   type NewAssetInput,
   type NewVariantInput,
   type Repository,
+  type RoomInput,
   type VariantPatch,
 } from '../repository';
 import {
-  ARTWORK_COLS, ASSET_COLS, PRESENTATION_COLS, VARIANT_COLS,
-  itemsToRpc, storagePaths, toArtwork, toAsset, toPresentation, toVariant,
-  type ArtworkRow, type AssetRow, type PresentationRow, type VariantRow,
+  ARTWORK_COLS, ASSET_COLS, PRESENTATION_COLS, ROOM_COLS, VARIANT_COLS,
+  itemsToRpc, placementsToRpc, storagePaths, toArtwork, toAsset, toPresentation, toRoom, toVariant,
+  type ArtworkRow, type AssetRow, type PresentationRow, type RoomRow, type VariantRow,
 } from './mapping';
 
 type StoredAsset = Asset & { storagePath: string; thumbPath: string };
@@ -68,6 +71,12 @@ export class SupabaseRepository implements Repository {
   async renameArtwork(id: string, title: string) {
     const { data, error } = await this.sb
       .from('artworks').update({ title: cleanTitle(title, 'Sans titre') }).eq('id', id).select(ARTWORK_COLS).single();
+    if (error) fail(error, 'Œuvre');
+    return toArtwork(data as ArtworkRow);
+  }
+
+  async setArtworkHeight(id: string, heightCm: number | null) {
+    const { data, error } = await this.sb.from('artworks').update({ height_cm: heightCm }).eq('id', id).select(ARTWORK_COLS).single();
     if (error) fail(error, 'Œuvre');
     return toArtwork(data as ArtworkRow);
   }
@@ -202,6 +211,51 @@ export class SupabaseRepository implements Repository {
     return toPresentation(data as PresentationRow);
   }
 
+  async createHanging(roomId: string, title: string) {
+    const { data, error } = await this.sb
+      .from('presentations').insert({ mode: 'room', room_id: roomId, artwork_id: null, title: cleanTitle(title, 'Accrochage') })
+      .select(PRESENTATION_COLS).single();
+    if (error) fail(error, 'Création de l’accrochage');
+    return toPresentation(data as PresentationRow);
+  }
+
+  async listRooms() {
+    const { data, error } = await this.sb.from('rooms').select(ROOM_COLS).order('created_at');
+    if (error) fail(error, 'Salles');
+    return (data as RoomRow[]).map(toRoom);
+  }
+
+  async getRoom(id: string) {
+    const { data, error } = await this.sb.from('rooms').select(ROOM_COLS).eq('id', id).maybeSingle();
+    if (error) fail(error, 'Salle');
+    return data ? toRoom(data as RoomRow) : null;
+  }
+
+  private roomRow(input: RoomInput) {
+    const r = cleanRoomInput(input);
+    return { title: r.title, length_cm: r.lengthCm, width_cm: r.widthCm, height_cm: r.heightCm, wall_color: r.wallColor, floor_color: r.floorColor, light: r.light };
+  }
+
+  async createRoom(input: RoomInput) {
+    const { data, error } = await this.sb.from('rooms').insert(this.roomRow(input)).select(ROOM_COLS).single();
+    if (error) fail(error, 'Création de la salle');
+    return toRoom(data as RoomRow);
+  }
+
+  async updateRoom(id: string, input: RoomInput) {
+    const { data, error } = await this.sb.from('rooms').update(this.roomRow(input)).eq('id', id).select(ROOM_COLS).single();
+    if (error) fail(error, 'Salle');
+    return toRoom(data as RoomRow);
+  }
+
+  async deleteRoom(id: string) {
+    const { count, error: e1 } = await this.sb.from('presentations').select('id', { count: 'exact', head: true }).eq('room_id', id);
+    if (e1) fail(e1, 'Salle');
+    if ((count ?? 0) > 0) throw new RoomInUseError(count ?? 0);
+    const { error } = await this.sb.from('rooms').delete().eq('id', id);
+    if (error) fail(error, 'Suppression de la salle');
+  }
+
   async renamePresentation(id: string, title: string) {
     const { data, error } = await this.sb
       .from('presentations').update({ title: cleanTitle(title, 'Présentation') }).eq('id', id)
@@ -240,10 +294,14 @@ export class SupabaseRepository implements Repository {
       p_note: input.note ?? null,
       p_items: itemsToRpc(input.items),
     });
-    if (rpc.error) {
+    const rpc2 = rpc.error || !input.placements?.length
+      ? { error: null }
+      : await this.sb.rpc('save_placements', { p_variant_id: id, p_note: input.note ?? null, p_placements: placementsToRpc(input.placements) });
+    const failure = rpc.error ?? rpc2.error;
+    if (failure) {
       // Pas de variante à moitié créée.
       await this.sb.from('variants').delete().eq('id', id);
-      fail(rpc.error, 'Création de la variante');
+      fail(failure, 'Création de la variante');
     }
     return this.requireVariant(id);
   }
@@ -269,6 +327,15 @@ export class SupabaseRepository implements Repository {
         p_items: itemsToRpc(patch.items ?? current.items),
       });
       if (error) fail(error, 'Enregistrement de la variante');
+    }
+    if (patch.placements !== undefined) {
+      const current = patch.note !== undefined ? null : await this.requireVariant(id);
+      const { error } = await this.sb.rpc('save_placements', {
+        p_variant_id: id,
+        p_note: patch.note !== undefined ? patch.note : current!.note,
+        p_placements: placementsToRpc(patch.placements),
+      });
+      if (error) fail(error, 'Enregistrement de l’accrochage');
     }
     return this.requireVariant(id);
   }

@@ -10,6 +10,8 @@ export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
 export interface Artwork {
   id: string;
   title: string;
+  /** Hauteur réelle DÉCLARÉE par l'artiste, en centimètres. Jamais déduite d'une photo. */
+  heightCm: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,9 +31,31 @@ export interface Asset {
   createdAt: string;
 }
 
+export type LightPreset = 'bright' | 'dark' | 'day';
+
+/** Salle paramétrable (F-37). Dimensions intérieures en centimètres. */
+export interface Room {
+  id: string;
+  title: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  wallColor: string;
+  floorColor: string;
+  light: LightPreset;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Présentation. mode '2d' : mise en situation photographique d'une œuvre (Studio).
+ * mode 'room' : accrochage de plusieurs œuvres dans une salle (artworkId nul, roomId requis).
+ */
 export interface Presentation {
   id: string;
-  artworkId: string;
+  mode: '2d' | 'room';
+  artworkId: string | null;
+  roomId: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -66,6 +90,22 @@ export interface VariantItem {
 }
 
 /**
+ * Œuvre placée dans une salle (F-38). Repère : origine au coin de la salle, x le long de la
+ * longueur, z le long de la largeur, en centimètres. rotationDeg : 0 = face tournée vers le mur d'entrée (z = 0).
+ */
+export interface Placement {
+  id: string;
+  artworkId: string;
+  /** Photographie utilisée comme panneau ; null : première photo disponible de l'œuvre. */
+  assetId: string | null;
+  xCm: number;
+  zCm: number;
+  rotationDeg: number;
+  /** Hauteur de la base au-dessus du sol (0 = posée au sol). */
+  elevationCm: number;
+}
+
+/**
  * Variante 2D (V2) : un décor facultatif et une LISTE d'éléments.
  * L'ordre du tableau est l'ordre de superposition : index 0 au fond, dernier au premier plan.
  */
@@ -75,6 +115,8 @@ export interface Variant {
   name: string;
   backgroundAssetId: string | null;
   items: VariantItem[];
+  /** Accrochage (présentations de mode 'room') ; vide pour une variante 2D. */
+  placements: Placement[];
   note: string | null;
   createdAt: string;
   updatedAt: string;

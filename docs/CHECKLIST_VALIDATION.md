@@ -1,4 +1,4 @@
-# Checklist de validation — V1 et V2 phase 1
+# Checklist de validation — V1, V2 phase 1 et phase 3
 
 Trois statuts, sans exagération :
 - **Vérifié** : un test automatique ou le parcours navigateur l'a constaté pendant le développement.
@@ -10,10 +10,11 @@ Trois statuts, sans exagération :
 | Contrôle | Résultat |
 |---|---|
 | `npm run lint`, `npm run typecheck`, `npm run build` | Passent |
-| `npm test` | 47 tests passent (validation, composition à éléments, sélection au pixel, dépôt local, reprise V1, mapping Supabase, interface) |
+| `npm test` | 69 tests passent (validation, composition à éléments, sélection au pixel, dépôt local, reprise V1, géométrie de la salle, salles et accrochages, mapping Supabase, interface) |
 | `scripts/test-sql-local.sh` sur PostgreSQL 16 avec stubs Supabase | Tous les tests SQL passent, y compris la reprise d'un jeu de données V1 créé avant la migration V2 |
 | Tests de mutation SQL (protection retirée volontairement) | Quatre mutations, quatre échecs détectés : RLS retirée, clé étrangère non composite, `set null` sur toutes les colonnes, politique Storage ouverte |
 | `e2e/run.cjs` dans Chromium (mode local) | Parcours complet réussi (V1 + éléments multiples + reprise V1), aucune erreur console |
+| `e2e/salle.cjs` dans Chromium avec WebGL (mode local) | Parcours de la salle réussi, aucune erreur console |
 | `npm run test:rls` contre un vrai Supabase | **À faire** (pas d'accès aux comptes) |
 
 Les stubs SQL imitent `auth.uid()` et `storage.objects` ; ils ne sont pas Supabase. Le test réel `test:rls` reste indispensable.
@@ -79,6 +80,32 @@ La phase 1 a été construite sans attendre la phase 0, parce qu'elle se vérifi
 
 Vérifié aussi en SQL : `save_variant` est atomique (un élément invalide annule tout l'enregistrement) et inaccessible à un visiteur anonyme.
 
+## V2 — Phase 3 : échelle, salles, accrochages
+
+Construite avant la phase 2 (détourage) : dans la salle, une photo non détourée est un panneau rectangulaire.
+
+| ID | Exigence | Statut |
+|---|---|---|
+| F-36 | Hauteur réelle déclarée (cm) | Vérifié (tests, E2E). Largeur et profondeur : **à implémenter** |
+| F-37 | Salles paramétrables : dimensions, couleurs, lumière | Vérifié pour la création et les dimensions (tests, E2E). Lumière : trois préréglages ; intensité et température réglables : **à implémenter**. Modification et suppression : implémentées, non vérifiées en E2E |
+| F-38 | Placer plusieurs œuvres : position, orientation, élévation, choix de la photo | Vérifié pour le placement et le déplacement ; orientation, élévation, choix de photo : implémentés, non vérifiés en E2E |
+| F-39 | Navigation à la première personne, clavier et souris ; collisions avec les murs | Vérifié sur ordinateur (E2E : marche, arrêt à 25 cm du mur du fond). Joystick tactile : implémenté, **non vérifié sur un vrai téléphone**. Collision avec les socles : sans objet (pas de socles) |
+| F-40 | Vue en plan : déplacer, tourner, cotes aux murs, distances entre œuvres | Vérifié (déplacement clavier, cotes). Aimantation aux murs : **à implémenter** |
+| F-41 | Silhouette humaine à l'échelle, taille réglable, déplaçable en plan | Vérifié à l'écran. Sa position n'est pas enregistrée avec l'accrochage |
+| F-42 | Socles et supports | **À implémenter** (seule l'élévation de la base existe) |
+| F-43 | Accrochages = variantes : enregistrer, dupliquer, renommer, rouvrir | Vérifié (enregistrement, rechargement, duplication). Comparaison d'accrochages : phase 4 |
+| F-53 | Export PNG de la vue courante, mention « Simulation 2,5D » | Vérifié (fichier 1920 px produit). Choix de la résolution : **à implémenter** |
+
+| # | Critère V2 | Statut |
+|---|---|---|
+| 5 | Œuvre de 175 cm et silhouette de 170 cm de hauteurs cohérentes | Vérifié par le calcul (tests : rapport exact, indépendant de la photo) et constaté sur capture. La mesure à l'écran à 3 % près n'est **pas** automatisée |
+| 6 | Pas de traversée des murs ; la hauteur des yeux change le point de vue | Collision vérifiée (tests + E2E). Hauteur des yeux : implémentée, non vérifiée en E2E |
+| 7 | Deux accrochages distincts après fermeture | Persistance vérifiée (tests, E2E). Comparaison côte à côte : phase 4 |
+| 12 | B ne peut ni lire ni référencer les salles et placements de A | Vérifié en SQL local (lecture, modification, `save_placements`, accrochage dans la salle d'autrui, œuvre ou image d'autrui) ; trois mutations détectées. **À confirmer** sur un vrai Supabase |
+| 13 | Retrouvé sur un second appareil | **À faire** (phase 0) |
+
+Non mesuré : la fluidité (≥ 30 images/s avec 10 œuvres) et la mémoire sur mobile. Pas d'annulation (Ctrl+Z) dans l'accrochage.
+
 ## Recette utilisateur à faire toi-même après déploiement
 
 1. Ouvrir l'atelier : Access, puis lien magique.
@@ -96,5 +123,6 @@ Vérifié aussi en SQL : `save_variant` est atomique (un élément invalide annu
 - Pas de brouillon hors ligne persistant (D-04) : une coupure garde l'édition dans l'onglet seulement.
 - Pas d'export/import d'archive de l'atelier (F-15, P1).
 - Pas de partage par lien ni d'archive (repris en V2 phase 6).
-- V2 : seule la phase 1 (éléments multiples) est faite. Pas encore de détourage, de salle 2,5D, de volumes ni de points de vue.
+- V2 : phases 1 et 3 faites. Pas encore de détourage, de points de vue enregistrés, de comparaison d'accrochages ni de volumes.
+- Dans la salle, une photographie est un panneau plat : de profil, elle devient un trait. Les photos non détourées sont des rectangles.
 - Une même session Studio n'avertit pas si une autre machine a modifié la même variante entre-temps : le dernier enregistrement l'emporte.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useBlocker, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useBlocker, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../app/AppContext';
 import { useLoad } from '../../app/useLoad';
 import { AssetThumb } from '../../components/AssetThumb';
@@ -57,6 +57,10 @@ export function StudioPage() {
       </section>
     );
 
+  // Un accrochage s'ouvre dans son propre écran.
+  if (data.presentation.mode === 'room' || !data.presentation.artworkId) return <Navigate to={`/accrochages/${presentationId}`} replace />;
+  const artworkId = data.presentation.artworkId;
+
   const requested = params.get('variant');
   // Variante juste créée : attendre le rechargement plutôt que d'afficher une autre variante.
   if (requested && loading && !data.variants.some((v) => v.id === requested)) {
@@ -65,7 +69,7 @@ export function StudioPage() {
   const active = data.variants.find((v) => v.id === requested) ?? data.variants[0] ?? null;
 
   if (!active)
-    return <EmptyPresentation presentationId={presentationId} assets={data.assets} artworkId={data.presentation.artworkId} onCreated={(id) => { setParams({ variant: id }); reload(); }} />;
+    return <EmptyPresentation presentationId={presentationId} assets={data.assets} artworkId={artworkId} onCreated={(id) => { setParams({ variant: id }); reload(); }} />;
 
   return (
     <StudioEditor
@@ -76,7 +80,7 @@ export function StudioPage() {
       artworks={data.artworks}
       presentationTitle={data.presentation.title}
       artworkTitle={data.artwork?.title ?? ''}
-      artworkId={data.presentation.artworkId}
+      artworkId={artworkId}
       presentationId={presentationId}
       reload={reload}
     />

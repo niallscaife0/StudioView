@@ -9,6 +9,7 @@ import { useToast } from '../../components/Toast';
 import { useDeleteAsset } from '../../components/useDeleteAsset';
 import { InlineRename } from '../../components/InlineRename';
 import type { Asset } from '../../domain/types';
+import { formatCm, parseHeightCm } from '../hanging/geometry';
 import { CreatePresentationDialog } from './CreatePresentationDialog';
 
 export function ArtworkPage() {
@@ -77,6 +78,18 @@ export function ArtworkPage() {
         />
         <button type="button" className="link-button danger-text" onClick={() => setConfirmDelete(true)}>Supprimer l’œuvre</button>
       </div>
+
+      <HeightField
+        value={artwork.heightCm}
+        onSave={async (h) => {
+          try {
+            await repo.setArtworkHeight(artwork.id, h);
+            reload();
+          } catch (e) {
+            toast('error', (e as Error).message);
+          }
+        }}
+      />
 
       <section className="block">
         <div className="block-head">
@@ -152,5 +165,30 @@ export function ArtworkPage() {
       )}
       {del.element}
     </section>
+  );
+}
+
+/** Hauteur réelle déclarée (F-36) : nécessaire pour placer l'œuvre à l'échelle dans une salle. */
+function HeightField({ value, onSave }: { value: number | null; onSave: (h: number | null) => Promise<void> }) {
+  const [text, setText] = useState(value ? String(value).replace('.', ',') : '');
+  const [bad, setBad] = useState(false);
+  return (
+    <form
+      className="height-field"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (text.trim() === '') { setBad(false); void onSave(null); return; }
+        const h = parseHeightCm(text);
+        setBad(!h);
+        if (h) void onSave(h);
+      }}
+    >
+      <label htmlFor="artwork-height">Hauteur réelle (cm)</label>
+      <input id="artwork-height" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} placeholder="ex. 175" aria-invalid={bad} />
+      <button type="submit" className="button button-small">Enregistrer</button>
+      <span className="muted small">
+        {bad ? 'Indique une hauteur entre 1 et 2000 cm.' : value ? `Dimension déclarée : ${formatCm(value)}. Elle fixe la taille de l’œuvre dans les salles.` : 'Nécessaire pour placer l’œuvre à l’échelle dans une salle.'}
+      </span>
+    </form>
   );
 }

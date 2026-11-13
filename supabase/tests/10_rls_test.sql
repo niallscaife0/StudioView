@@ -208,6 +208,108 @@ do $$ declare it record; begin
   end if;
 end $$;
 
+-- ---------- Phase 3 : hauteur déclarée, salles, accrochages (propriétaire C) ----------
+update public.artworks set height_cm = 175 where id = 'c1000000-0000-0000-0000-000000000001';
+do $$ begin
+  begin
+    update public.artworks set height_cm = 0 where id = 'c1000000-0000-0000-0000-000000000001';
+    raise exception 'ÉCHEC : hauteur nulle acceptée';
+  exception when check_violation then null; end;
+  if (select mode from public.presentations where id = 'c3000000-0000-0000-0000-000000000001') <> '2d' then
+    raise exception 'ÉCHEC : une présentation V1 doit rester en mode 2d';
+  end if;
+end $$;
+
+insert into public.rooms (id, title, length_cm, width_cm, height_cm, wall_color, floor_color)
+values ('c6000000-0000-0000-0000-000000000001', 'Galerie', 800, 600, 350, '#f1f0ec', '#b9b4a9');
+insert into public.presentations (id, mode, room_id, artwork_id, title)
+values ('c7000000-0000-0000-0000-000000000001', 'room', 'c6000000-0000-0000-0000-000000000001', null, 'Accrochage');
+insert into public.variants (id, presentation_id, name) values ('c8000000-0000-0000-0000-000000000001', 'c7000000-0000-0000-0000-000000000001', 'A');
+select public.save_placements('c8000000-0000-0000-0000-000000000001', null, '[
+  {"id":"c9000000-0000-0000-0000-000000000001","artworkId":"c1000000-0000-0000-0000-000000000001","assetId":"c2000000-0000-0000-0000-000000000001","xCm":400,"zCm":300,"rotationDeg":0,"elevationCm":0},
+  {"id":"c9000000-0000-0000-0000-000000000002","artworkId":"c1000000-0000-0000-0000-000000000001","assetId":null,"xCm":520.5,"zCm":300,"rotationDeg":-45,"elevationCm":90}
+]'::jsonb);
+do $$ begin
+  if (select count(*) from public.placements where variant_id = 'c8000000-0000-0000-0000-000000000001') <> 2 then raise exception 'ÉCHEC : save_placements doit écrire 2 placements'; end if;
+  if (select elevation_cm from public.placements where id = 'c9000000-0000-0000-0000-000000000002') <> 90 then raise exception 'ÉCHEC : élévation non enregistrée'; end if;
+  -- Forme d'une présentation : salle obligatoire en mode room, interdite en mode 2d
+  begin
+    insert into public.presentations (mode, room_id, artwork_id, title) values ('room', null, null, 'sans salle');
+    raise exception 'ÉCHEC : accrochage sans salle accepté';
+  exception when check_violation then null; end;
+  begin
+    insert into public.presentations (mode, room_id, artwork_id, title)
+    values ('2d', 'c6000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'mixte');
+    raise exception 'ÉCHEC : présentation 2d avec salle acceptée';
+  exception when check_violation then null; end;
+  -- Dimensions de salle bornées ; placement hors bornes : tout l'enregistrement est annulé
+  begin
+    insert into public.rooms (title, length_cm, width_cm, height_cm, wall_color, floor_color) values ('trop petite', 10, 600, 350, '#ffffff', '#000000');
+    raise exception 'ÉCHEC : salle de 10 cm acceptée';
+  exception when check_violation then null; end;
+  begin
+    perform public.save_placements('c8000000-0000-0000-0000-000000000001', null,
+      '[{"artworkId":"c1000000-0000-0000-0000-000000000001","xCm":-50,"zCm":0}]'::jsonb);
+    raise exception 'ÉCHEC : placement hors bornes accepté';
+  exception when check_violation then null; end;
+  if (select count(*) from public.placements where variant_id = 'c8000000-0000-0000-0000-000000000001') <> 2 then raise exception 'ÉCHEC : save_placements non atomique'; end if;
+  -- Une salle utilisée ne se supprime pas silencieusement
+  begin
+    delete from public.rooms where id = 'c6000000-0000-0000-0000-000000000001';
+    raise exception 'ÉCHEC : salle utilisée supprimée';
+  exception when foreign_key_violation then null; end;
+end $$;
+
+-- B face aux salles et accrochages de C
+set request.jwt.claim.sub = 'bbbbbbbb-0000-0000-0000-000000000002';
+do $$ declare n int; begin
+  if (select count(*) from public.rooms) <> 0 then raise exception 'ÉCHEC : B voit les salles de C'; end if;
+  if (select count(*) from public.placements) <> 0 then raise exception 'ÉCHEC : B voit les placements de C'; end if;
+  update public.rooms set title = 'piraté';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'ÉCHEC : B a modifié une salle de C'; end if;
+  begin
+    perform public.save_placements('c8000000-0000-0000-0000-000000000001', 'piraté', '[]'::jsonb);
+    raise exception 'ÉCHEC : B a enregistré dans l''accrochage de C';
+  exception when insufficient_privilege then null; end;
+  -- B ne peut pas accrocher dans la salle de C
+  begin
+    insert into public.presentations (mode, room_id, artwork_id, title) values ('room', 'c6000000-0000-0000-0000-000000000001', null, 'intrusion');
+    raise exception 'ÉCHEC : B a créé un accrochage dans la salle de C';
+  exception when foreign_key_violation then null; end;
+end $$;
+insert into public.rooms (id, title, length_cm, width_cm, height_cm, wall_color, floor_color) values ('b6000000-0000-0000-0000-000000000001', 'Salle de B', 500, 500, 300, '#ffffff', '#888888');
+insert into public.presentations (id, mode, room_id, artwork_id, title) values ('b7000000-0000-0000-0000-000000000001', 'room', 'b6000000-0000-0000-0000-000000000001', null, 'Accrochage de B');
+insert into public.variants (id, presentation_id, name) values ('b8000000-0000-0000-0000-000000000001', 'b7000000-0000-0000-0000-000000000001', 'A');
+do $$ begin
+  -- B ne peut placer ni l'œuvre ni l'image de C dans sa propre salle
+  begin
+    perform public.save_placements('b8000000-0000-0000-0000-000000000001', null,
+      '[{"artworkId":"c1000000-0000-0000-0000-000000000001","xCm":100,"zCm":100}]'::jsonb);
+    raise exception 'ÉCHEC : B a placé l''œuvre de C';
+  exception when foreign_key_violation then null; end;
+  begin
+    perform public.save_placements('b8000000-0000-0000-0000-000000000001', null,
+      '[{"artworkId":"b1000000-0000-0000-0000-000000000001","assetId":"c2000000-0000-0000-0000-000000000001","xCm":100,"zCm":100}]'::jsonb);
+    raise exception 'ÉCHEC : B a utilisé l''image de C comme panneau';
+  exception when foreign_key_violation then null; end;
+end $$;
+
+-- Retour à C : supprimer l'accrochage libère la salle ; supprimer l'œuvre retire ses placements
+set request.jwt.claim.sub = 'cccccccc-0000-0000-0000-000000000003';
+insert into public.presentations (id, mode, room_id, artwork_id, title) values ('c7000000-0000-0000-0000-000000000002', 'room', 'c6000000-0000-0000-0000-000000000001', null, 'Second');
+insert into public.variants (id, presentation_id, name) values ('c8000000-0000-0000-0000-000000000002', 'c7000000-0000-0000-0000-000000000002', 'A');
+select public.save_placements('c8000000-0000-0000-0000-000000000002', null, '[{"artworkId":"c1000000-0000-0000-0000-000000000001","xCm":100,"zCm":100}]'::jsonb);
+delete from public.presentations where id = 'c7000000-0000-0000-0000-000000000001';
+do $$ begin
+  if (select count(*) from public.placements where variant_id = 'c8000000-0000-0000-0000-000000000001') <> 0 then raise exception 'ÉCHEC : placements non supprimés avec l''accrochage'; end if;
+end $$;
+delete from public.artworks where id = 'c1000000-0000-0000-0000-000000000001';
+do $$ begin
+  if (select count(*) from public.placements) <> 0 then raise exception 'ÉCHEC : placements d''une œuvre supprimée encore présents'; end if;
+  if (select count(*) from public.variants where id = 'c8000000-0000-0000-0000-000000000002') <> 1 then raise exception 'ÉCHEC : l''accrochage doit survivre à la suppression d''une œuvre'; end if;
+end $$;
+
 -- ---------- Anonyme : aucune écriture par la fonction ----------
 reset request.jwt.claim.sub;
 set role anon;
@@ -215,6 +317,14 @@ do $$ begin
   begin
     perform public.save_variant('c4000000-0000-0000-0000-000000000001', null, null, '[]'::jsonb);
     raise exception 'ÉCHEC : anon a pu appeler save_variant';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.save_placements('c8000000-0000-0000-0000-000000000002', null, '[]'::jsonb);
+    raise exception 'ÉCHEC : anon a pu appeler save_placements';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform count(*) from public.rooms;
+    raise exception 'ÉCHEC : anon a pu lire rooms';
   exception when insufficient_privilege then null; end;
 end $$;
 

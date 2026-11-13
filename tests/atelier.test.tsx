@@ -46,6 +46,17 @@ describe('Atelier', () => {
     expect(await screen.findByText(/au moins deux variantes enregistrées/)).toBeInTheDocument();
   });
 
+  it('crée une salle depuis la page Accrochages et propose d’y accrocher', async () => {
+    const { repo } = renderAt('/accrochages');
+    expect(await screen.findByText(/Aucune salle/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Nouvelle salle' }));
+    await userEvent.type(screen.getByLabelText('Nom de la salle'), 'Galerie de quartier');
+    await userEvent.click(screen.getByRole('button', { name: 'Créer la salle' }));
+    expect(await screen.findByText(/8,00 m × 6,00 m/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvel accrochage' })).toBeInTheDocument();
+    expect(await repo.listRooms()).toHaveLength(1);
+  });
+
   it('n’affiche pas de bouton d’import 3D inerte', async () => {
     renderAt('/ressources');
     await userEvent.click(await screen.findByRole('tab', { name: 'Modèles 3D' }));

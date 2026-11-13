@@ -1,4 +1,4 @@
-import type { Artwork, Asset, AssetKind, ImageMime, Presentation, Variant, VariantItem } from '../domain/types';
+import type { Artwork, Asset, AssetKind, ImageMime, LightPreset, Placement, Presentation, Room, Variant, VariantItem } from '../domain/types';
 
 export interface NewAssetInput {
   artworkId: string | null;
@@ -17,11 +17,22 @@ export interface NewVariantInput {
   name: string;
   backgroundAssetId: string | null;
   items: VariantItem[];
+  placements?: Placement[];
   note?: string | null;
 }
 
+export interface RoomInput {
+  title: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  wallColor: string;
+  floorColor: string;
+  light: LightPreset;
+}
+
 /** `items`, s'il est fourni, REMPLACE toute la liste (ordre compris), de façon atomique. */
-export type VariantPatch = Partial<Pick<Variant, 'name' | 'backgroundAssetId' | 'items' | 'note'>>;
+export type VariantPatch = Partial<Pick<Variant, 'name' | 'backgroundAssetId' | 'items' | 'placements' | 'note'>>;
 
 export type AssetPatch = Partial<Pick<Asset, 'title' | 'artworkId' | 'kind'>>;
 
@@ -33,6 +44,8 @@ export interface Repository {
   getArtwork(id: string): Promise<Artwork | null>;
   createArtwork(title: string): Promise<Artwork>;
   renameArtwork(id: string, title: string): Promise<Artwork>;
+  /** Hauteur réelle déclarée (cm) ; null pour l'effacer. */
+  setArtworkHeight(id: string, heightCm: number | null): Promise<Artwork>;
   /** Supprime l'œuvre, ses présentations et variantes. Les photos restent dans Ressources, sans œuvre. */
   deleteArtwork(id: string): Promise<void>;
 
@@ -47,6 +60,15 @@ export interface Repository {
   listPresentations(): Promise<Presentation[]>;
   getPresentation(id: string): Promise<Presentation | null>;
   createPresentation(artworkId: string, title: string): Promise<Presentation>;
+  /** Accrochage : présentation de mode 'room' dans une salle. */
+  createHanging(roomId: string, title: string): Promise<Presentation>;
+
+  listRooms(): Promise<Room[]>;
+  getRoom(id: string): Promise<Room | null>;
+  createRoom(input: RoomInput): Promise<Room>;
+  updateRoom(id: string, input: RoomInput): Promise<Room>;
+  /** Refuse (RoomInUseError) si des accrochages utilisent la salle. */
+  deleteRoom(id: string): Promise<void>;
   renamePresentation(id: string, title: string): Promise<Presentation>;
   deletePresentation(id: string): Promise<void>;
 
@@ -61,6 +83,13 @@ export class AssetInUseError extends Error {
   constructor(public readonly variants: Variant[]) {
     super(`Cette image est utilisée dans ${variants.length} variante(s).`);
     this.name = 'AssetInUseError';
+  }
+}
+
+export class RoomInUseError extends Error {
+  constructor(public readonly count: number) {
+    super(`Cette salle est utilisée par ${count} accrochage${count > 1 ? 's' : ''}. Supprime-les d’abord.`);
+    this.name = 'RoomInUseError';
   }
 }
 
@@ -80,7 +109,9 @@ export class SyncError extends Error {
 }
 
 export function variantsUsingAsset(variants: Variant[], assetId: string): Variant[] {
-  return variants.filter((v) => v.backgroundAssetId === assetId || v.items.some((i) => i.assetId === assetId));
+  return variants.filter(
+    (v) => v.backgroundAssetId === assetId || v.items.some((i) => i.assetId === assetId) || v.placements.some((p) => p.assetId === assetId),
+  );
 }
 
 export function nowIso(): string {

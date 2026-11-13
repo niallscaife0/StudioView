@@ -1,9 +1,11 @@
 /** Petite enveloppe Promise autour d'IndexedDB, sans dépendance. */
 
-export const STORES = ['artworks', 'assets', 'blobs', 'presentations', 'variants'] as const;
+export const STORES = ['artworks', 'assets', 'blobs', 'presentations', 'variants', 'rooms'] as const;
+/** Version 2 : ajout du magasin « rooms ». Les magasins manquants sont créés à l'ouverture. */
+export const DB_VERSION = 2;
 export type StoreName = (typeof STORES)[number];
 
-export function openDatabase(name: string, version = 1): Promise<IDBDatabase> {
+export function openDatabase(name: string, version = DB_VERSION): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name, version);
     req.onupgradeneeded = () => {

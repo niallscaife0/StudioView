@@ -25,6 +25,9 @@ export const routes = [
       { path: '/studio/:presentationId', element: <StudioPage /> },
       { path: '/comparaison', element: <ComparePage /> },
       { path: '/variantes', element: <VariantsPage /> },
+      // Chargées à la demande : la salle 3D (Three.js) ne pèse pas sur le démarrage de l'application.
+      { path: '/accrochages', lazy: async () => ({ Component: (await import('../features/hanging/HangingsPage')).HangingsPage }) },
+      { path: '/accrochages/:presentationId', lazy: async () => ({ Component: (await import('../features/hanging/HangingPage')).HangingPage }) },
       {
         path: '*',
         element: (

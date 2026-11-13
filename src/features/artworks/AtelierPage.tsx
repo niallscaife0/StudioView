@@ -116,8 +116,8 @@ export function AtelierPage() {
           <ul className="resume-list">
             {recent.map(({ v, p, a }) => (
               <li key={v.id}>
-                <Link to={`/studio/${p.id}?variant=${v.id}`}>
-                  <span>{v.name}</span> <span className="muted">{p.title}, {a?.title ?? 'œuvre supprimée'}</span>
+                <Link to={`/${p.mode === 'room' ? 'accrochages' : 'studio'}/${p.id}?variant=${v.id}`}>
+                  <span>{v.name}</span> <span className="muted">{p.title}, {p.mode === 'room' ? 'accrochage' : a?.title ?? 'œuvre supprimée'}</span>
                 </Link>
               </li>
             ))}

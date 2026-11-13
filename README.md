@@ -2,7 +2,12 @@
 
 Site privé pour éprouver comment les conditions de présentation changent la perception d'une sculpture. On importe des photographies, on place la sculpture dans des décors, on enregistre des variantes, on les compare, on exporte une image.
 
-Ce dépôt contient la **V1** (dossier v1.2) et la **phase 1 de la V2** (dossier V2) : plusieurs éléments par composition. Les phases suivantes de la V2 (préparation des images, salle 2,5D, volumes, points de vue), le partage par lien et l'archive ne sont **pas** implémentés. État détaillé : `docs/CHECKLIST_VALIDATION.md`.
+Ce dépôt contient la **V1** (dossier v1.2) et deux phases de la **V2** (dossier V2) :
+
+- **phase 1** : plusieurs éléments par composition dans le Studio 2D ;
+- **phase 3** (cœur) : hauteur réelle des œuvres, salles paramétrables, accrochages, vue en plan, salle navigable à la première personne (« Simulation 2,5D »), silhouette humaine, export PNG de la vue.
+
+**Non implémentés** : préparation des images (détourage, phase 2), points de vue enregistrés et comparaison d'accrochages (phase 4), volume (multi-angles, splats, phase 5), partage par lien et archive (phase 6), parcours (phase 7). État détaillé : `docs/CHECKLIST_VALIDATION.md`.
 
 ## Démarrage rapide (mode démo local)
 
@@ -36,7 +41,8 @@ Procédure complète, Cloudflare Workers et Access compris : [`docs/DEPLOIEMENT.
 | `npm run check` | Les quatre à la suite |
 | `scripts/test-sql-local.sh` | Migration + tests d'autorisation sur un PostgreSQL 15+ local jetable |
 | `npm run test:rls` | Tests d'autorisation contre un **projet Supabase de recette** réel |
-| `node e2e/run.cjs` | Parcours de recette complet dans un vrai Chrome (voir l'en-tête du fichier) |
+| `node e2e/run.cjs` | Parcours de recette 2D complet dans un vrai Chrome (voir l'en-tête du fichier) |
+| `node e2e/salle.cjs` | Parcours de la salle 2,5D : placement en plan, rendu WebGL, marche, collision, export |
 
 ## Structure
 
@@ -50,6 +56,7 @@ src/
     artworks/   atelier, fiche de sculpture, création de présentation
     assets/     validation, traitement d'image, import, ressources
     studio2d/   composeur pur (compose.ts), canvas interactif, studio
+    hanging/    salles, accrochages : géométrie pure (geometry.ts), vue en plan (SVG), salle 3D (Three.js)
     variants/   comparaison, liste des variantes
     exports/    export PNG
     auth/       connexion par lien magique
@@ -69,6 +76,7 @@ wrangler.jsonc  configuration Cloudflare Workers (assets statiques, routage SPA)
 - **Persistance isolée de l'interface.** Les écrans ne connaissent que l'interface `Repository`. Deux implémentations : `LocalRepository` (démo) et `SupabaseRepository` (hébergé).
 - **Un seul composeur.** `features/studio2d/compose.ts` dessine l'aperçu, la comparaison et l'export avec les mêmes paramètres. Il est prêt à servir aux rendus publiés en P1 (décision D-01).
 - **Une variante = un décor + une liste d'éléments** (V2, D2-02). L'ordre de la liste est l'ordre de superposition. En base, les éléments sont dans `variant_items` et s'enregistrent d'un bloc par la fonction SQL `save_variant()` (une seule transaction). Les variantes V1 sont reprises automatiquement, en SQL comme dans IndexedDB.
+- **Salle 2,5D.** Unité : le centimètre. `features/hanging/geometry.ts` (pur, testé) porte l'échelle, les collisions et le déplacement ; `RoomView.tsx` ne fait qu'afficher avec Three.js, chargé à la demande. La hauteur d'un panneau est la hauteur **déclarée** de l'œuvre, jamais déduite de la photo. En base : tables `rooms` et `placements`, fonction `save_placements()` atomique.
 - **Sélection au pixel.** Un clic dans l'aperçu choisit l'élément le plus haut dont le pixel n'est pas transparent ; les éléments masqués ou verrouillés sont traversés.
 - **Médias chargés en blob** (D-05). Le Storage est téléchargé de façon authentifiée, puis affiché par URL locale : pas d'URL publique, pas d'URL signée dans le composeur, pas de canvas bloqué par CORS.
 - **Coordonnées normalisées.** `x`, `y` sont le centre de la sculpture dans le cadre (0 à 1) ; `scale` est sa hauteur rapportée à celle du cadre. Le cadre prend les proportions du décor (16:9 sans décor). Le schéma est versionné (`schemaVersion: 1`) et ne doit pas être réutilisé pour la 3D.
@@ -80,6 +88,8 @@ wrangler.jsonc  configuration Cloudflare Workers (assets statiques, routage SPA)
 - Pas de `react-konva` : Canvas 2D natif, plus léger, et le composeur reste une fonction pure testable.
 - L'historique d'annulation (F-16, P1) existe déjà en version simple dans le Studio (session uniquement), parce que la maquette W3 prévoit un bouton « Annuler ».
 - Le réordonnancement des éléments se fait par boutons (« Vers l'avant », « Vers le fond »), pas encore par glisser-déposer dans la liste.
+- La phase 3 a été construite **avant la phase 2** (détourage), à la demande de l'utilisateur : les photos non détourées apparaissent comme des panneaux rectangulaires dans la salle.
+- Three.js est utilisé directement, sans React Three Fiber : moins de dépendances, et le rendu reste dans un seul composant.
 - Hébergement sur **Cloudflare Workers** (et non Pages) : `wrangler.jsonc` fait référence, `public/_redirects` ne doit pas être recréé.
 - Les tests E2E utilisent `puppeteer-core` plutôt que Playwright : le navigateur est fourni par la machine (`CHROME_PATH`).
 
